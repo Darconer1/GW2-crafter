@@ -14,7 +14,7 @@ if st.button("🔄 Cache leeren & Daten neu laden"):
 @st.cache_data(ttl=600)
 def fetch_gw2_data():
     try:
-        with open("config.json", "r", encoding="utf-8") as f:
+        with open("Config.json", "r", encoding="utf-8") as f:
             config_data = json.load(f)
     except Exception as e:
         st.error("Konnte config.json nicht laden.")
