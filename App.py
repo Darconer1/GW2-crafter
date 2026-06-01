@@ -6,7 +6,7 @@ import json
 API_BASE = "https://api.guildwars2.com/v2"
 
 st.set_page_config(page_title="GW2 Make-vs-Buy", layout="wide")
-st.title("⚔️ GW2 Make-vs-Buy (Namens-Fix)")
+st.title("⚔️ GW2 Make-vs-Buy (Profit & Filter)")
 
 if st.button("🔄 Cache leeren & Daten neu laden"):
     st.cache_data.clear()
@@ -14,18 +14,22 @@ if st.button("🔄 Cache leeren & Daten neu laden"):
 @st.cache_data(ttl=600)
 def fetch_gw2_data():
     debug_log = []
+    config_data = {}
     try:
         with open("config.json", "r", encoding="utf-8") as f:
             config_data = json.load(f)
             debug_log.append("✅ config.json erfolgreich geladen")
     except Exception as e:
         debug_log.append(f"❌ Fehler config.json: {e}")
-        return [], {}, {}, {}, debug_log
+        return {}, [], {}, {}, {}, debug_log
 
     top_items = []
     for category, items in config_data.items():
         if isinstance(items, dict):
             top_items.extend(items.values())
+        elif isinstance(items, list): # Falls du Listen in der JSON hast
+            top_items.extend(items)
+            
     debug_log.append(f"ℹ️ {len(top_items)} Start-Items aus JSON gelesen")
 
     session = requests.Session()
@@ -75,8 +79,6 @@ def fetch_gw2_data():
     for i in range(0, len(all_needed_items), 200):
         chunk = all_needed_items[i:i+200]
         ids_str = ",".join(map(str, chunk))
-        
-        # FIX: &lang=de für deutsche Namen und Status 206 (Partial Content) akzeptieren
         n_res = session.get(f"{API_BASE}/items?ids={ids_str}&lang=de")
         
         if n_res.status_code in [200, 206]:
@@ -85,12 +87,8 @@ def fetch_gw2_data():
                     item_names[item["id"]] = item["name"]
             except Exception as e:
                 debug_log.append(f"⚠️ JSON-Fehler bei Namen: {e}")
-        else:
-            debug_log.append(f"⚠️ Warnung: Namens-Abfrage fehlgeschlagen (Status {n_res.status_code}).")
-    
-    debug_log.append(f"✅ {len(item_names)} Namen erfolgreich geladen")
             
-    return top_items, recipes_map, prices, item_names, debug_log
+    return config_data, top_items, recipes_map, prices, item_names, debug_log
 
 # --- Logik ---
 def calc_optimal_unit_cost(item_id, prices, recipes_map):
@@ -148,19 +146,38 @@ def build_tree_string(node, item_names, count_multiplier, indent=""):
 # --- App UI ---
 try:
     with st.spinner("Lade Daten und analysiere..."):
-        top_items, recipes_map, prices, item_names, debug_log = fetch_gw2_data()
+        config_data, top_items, recipes_map, prices, item_names, debug_log = fetch_gw2_data()
         
-        with st.expander("🛠️ Debug-Log (Bei Fehlern aufklappen)", expanded=False):
+        # --- NEU: Smarte Filter-Optionen in der UI ---
+        st.markdown("### ⚙️ Filter")
+        hide_account_bound = st.checkbox("🚫 Accountgebundene Items ausblenden (Zeige nur profitable)", value=True)
+        
+        category_options = ["Alle Kategorien"] + list(config_data.keys())
+        selected_category = st.selectbox("📂 Wähle eine Kategorie (aus deiner JSON):", category_options)
+        
+        # Bestimmen, welche Items basierend auf der Kategorie angezeigt werden
+        if selected_category == "Alle Kategorien":
+            items_to_process = top_items
+        else:
+            cat_data = config_data[selected_category]
+            items_to_process = list(cat_data.values()) if isinstance(cat_data, dict) else cat_data
+            
+        with st.expander("🛠️ Debug-Log", expanded=False):
             for log_entry in debug_log:
                 st.write(log_entry)
         
         results = []
         full_data_map = {}
         
-        for item_id in top_items:
-            display_name = item_names.get(item_id, f"Unbekanntes Item ({item_id})")
-            
+        for item_id in items_to_process:
             sell_price = prices.get(item_id, {}).get("sells", {}).get("unit_price", 0)
+            
+            # --- NEU: Der Profit-Filter ---
+            # Wenn das Item nicht im TP verkauft werden kann und der Haken gesetzt ist -> überspringen!
+            if hide_account_bound and sell_price == 0:
+                continue
+                
+            display_name = item_names.get(item_id, f"Unbekanntes Item ({item_id})")
             opt_cost, action, root_node = calc_optimal_unit_cost(item_id, prices, recipes_map)
             
             profit = (sell_price * 0.85) - opt_cost if sell_price > 0 else 0
@@ -191,7 +208,7 @@ try:
                 tree_text = build_tree_string(tree_node, item_names, 1)
                 st.code(tree_text, language="markdown")
         else:
-            st.error("Es wurden Items verarbeitet, aber die Liste ist leer. Bitte schau ins Debug-Log!")
+            st.warning("Nach dem Filtern sind keine Items mehr übrig. Entweder ist die Kategorie leer, oder alle Items darin sind accountgebunden!")
             
 except Exception as e:
     st.error(f"Es gab einen kritischen Fehler: {e}")
