@@ -6,7 +6,7 @@ import json
 API_BASE = "https://api.guildwars2.com/v2"
 
 st.set_page_config(page_title="GW2 Make-vs-Buy", layout="wide")
-st.title("⚔️ GW2 Make-vs-Buy (Bugfix & Debug)")
+st.title("⚔️ GW2 Make-vs-Buy (Namens-Fix)")
 
 if st.button("🔄 Cache leeren & Daten neu laden"):
     st.cache_data.clear()
@@ -75,13 +75,20 @@ def fetch_gw2_data():
     for i in range(0, len(all_needed_items), 200):
         chunk = all_needed_items[i:i+200]
         ids_str = ",".join(map(str, chunk))
-        n_res = session.get(f"{API_BASE}/items?ids={ids_str}")
-        if n_res.status_code == 200:
-            for item in n_res.json(): item_names[item["id"]] = item["name"]
+        
+        # FIX: &lang=de für deutsche Namen und Status 206 (Partial Content) akzeptieren
+        n_res = session.get(f"{API_BASE}/items?ids={ids_str}&lang=de")
+        
+        if n_res.status_code in [200, 206]:
+            try:
+                for item in n_res.json(): 
+                    item_names[item["id"]] = item["name"]
+            except Exception as e:
+                debug_log.append(f"⚠️ JSON-Fehler bei Namen: {e}")
         else:
-            debug_log.append(f"⚠️ Warnung: Namens-Abfrage für {len(chunk)} Items fehlgeschlagen (Status {n_res.status_code}).")
+            debug_log.append(f"⚠️ Warnung: Namens-Abfrage fehlgeschlagen (Status {n_res.status_code}).")
     
-    debug_log.append(f"✅ {len(item_names)} Namen geladen")
+    debug_log.append(f"✅ {len(item_names)} Namen erfolgreich geladen")
             
     return top_items, recipes_map, prices, item_names, debug_log
 
@@ -127,7 +134,7 @@ def build_tree_string(node, item_names, count_multiplier, indent=""):
     total_count = node["count"] * count_multiplier
     
     if node["unit_cost"] == float('inf'):
-        cost_str = "🔒 Accountgebunden (Muss gefarmt/gecraftet werden)"
+        cost_str = "🔒 Accountgebunden (Farmen/Craften)"
     else:
         cost_str = format_money(node["unit_cost"] * total_count)
         
@@ -151,7 +158,6 @@ try:
         full_data_map = {}
         
         for item_id in top_items:
-            # DER BUGFIX: Item nicht mehr aus der Liste werfen, sondern Dummy-Namen geben
             display_name = item_names.get(item_id, f"Unbekanntes Item ({item_id})")
             
             sell_price = prices.get(item_id, {}).get("sells", {}).get("unit_price", 0)
@@ -177,6 +183,7 @@ try:
 
             st.markdown("### 🔍 Deep Dive: Rezept-Baum")
             st.info("💡 🔨 = Herstellen | 💰/🎒 = Kaufen oder Farmen")
+            
             selected_item = st.selectbox("Wähle ein Item für den detaillierten Baum:", df["Item"])
             
             if selected_item:
