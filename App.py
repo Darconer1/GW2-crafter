@@ -6,22 +6,33 @@ API_BASE = "https://api.guildwars2.com/v2"
 
 # --- Konfiguration & Styling ---
 st.set_page_config(page_title="GW2 Make-vs-Buy", layout="wide")
-st.title("⚔️ GW2 Make-vs-Buy Engine")
+st.title("⚔️ GW2 Make-vs-Buy (Bugfix Version)")
 
-# --- Datenbeschaffung (mit 10 Minuten Cache) ---
+# 1. WICHTIG: Ein Button um den Cache zu leeren, falls die API hängt
+if st.button("🔄 Cache leeren & Daten neu laden"):
+    st.cache_data.clear()
+
+# --- Datenbeschaffung ---
 @st.cache_data(ttl=600)
 def fetch_gw2_data():
+    # 2. WICHTIG: Wir testen jetzt mit 100% garantierten, handelbaren Items (Barren & Buff-Food)
     top_items = [
-        24594, 24615, 24589, 46738, 19685, 19684, 46682, 73248, 12824, 12820, 
-        12825, 12821, 74332, 46683, 46736, 24836, 24818, 24828, 24814, 46739, 
-        19732, 19731, 46678, 73142, 74326, 46679, 71425, 46737
+        19684, # Mithrilbarren
+        19685, # Orichalcumbarren
+        19712, # Eisenbarren
+        19710, # Bronzebarren
+        41569, # Schüssel mit süßer und scharfer Butternusskürbissuppe
+        12452  # Omnombeerenriegel
     ]
     
+    # 3. WICHTIG: Wir geben uns als App aus, damit die API uns nicht blockt
     session = requests.Session()
+    session.headers.update({'User-Agent': 'GW2-Streamlit-Handy-App'})
+    
     recipes_map = {}
     needed_items = set(top_items)
     
-    # 1. Rezeptbäume laden
+    # Rezeptbäume laden
     queue = list(top_items)
     for depth in range(3):
         next_queue = set()
@@ -39,7 +50,7 @@ def fetch_gw2_data():
                         needed_items.add(ing['item_id'])
         queue = list(next_queue)
 
-    # 2. Preise und Namen laden
+    # Preise und Namen laden
     prices = {}
     item_names = {}
     needed_items_list = list(needed_items)
@@ -104,11 +115,15 @@ def build_tree_string(node, item_names, count_multiplier, indent=""):
     return line
 
 # --- App UI & Ausführung ---
-st.write("Analysiere Live-Marktdaten der Guild Wars 2 API...")
-
 try:
-    with st.spinner("Lade Daten und berechne Bäume (kann beim ersten Mal 10-20 Sekunden dauern)..."):
+    with st.spinner("Lade Daten und berechne Bäume..."):
         top_items, recipes_map, prices, item_names = fetch_gw2_data()
+        
+        # --- NEU: DEBUG INFO FÜR DAS HANDY ---
+        with st.expander("🐛 API-Status (Hier klicken für Infos)"):
+            st.write(f"- Geladene Rezepte: {len(recipes_map)}")
+            st.write(f"- Geladene Preise aus dem TP: {len(prices)}")
+            st.write(f"- Geladene Item-Namen: {len(item_names)}")
         
         results = []
         full_data_map = {}
@@ -131,7 +146,6 @@ try:
             })
             full_data_map[item_names[item_id]] = root_node
 
-        # --- DER FIX: Wir prüfen erst, ob die Liste voll ist ---
         if len(results) > 0:
             df = pd.DataFrame(results)
             df = df.sort_values(by="Netto-Profit", ascending=False).reset_index(drop=True)
@@ -139,14 +153,14 @@ try:
             st.dataframe(df[["Item", "Verkauf (TP)", "Herstellkosten", "Profit Ansicht", "Strategie"]], use_container_width=True)
 
             st.markdown("### 🔍 Deep Dive: Rezept-Analyse")
-            selected_item = st.selectbox("Wähle ein Item für den detaillierten Make-vs-Buy Baum:", df["Item"])
+            selected_item = st.selectbox("Wähle ein Item für den detaillierten Baum:", df["Item"])
             
             if selected_item:
                 tree_node = full_data_map[selected_item]
                 tree_text = build_tree_string(tree_node, item_names, 1)
                 st.code(tree_text, language="markdown")
         else:
-            st.warning("Keine Preisdaten gefunden. Möglicherweise lädt die GW2 API gerade langsam. Lade die Seite kurz neu!")
+            st.warning("Keine Preisdaten gefunden. Bitte klicke oben auf 'Cache leeren'!")
             
 except Exception as e:
     st.error(f"Es gab einen Fehler bei der API-Abfrage: {e}")
