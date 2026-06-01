@@ -8,11 +8,9 @@ API_BASE = "https://api.guildwars2.com/v2"
 st.set_page_config(page_title="GW2 Make-vs-Buy", layout="wide")
 st.title("⚔️ GW2 Make-vs-Buy Engine")
 
-# --- Datenbeschaffung (mit 10 Minuten Cache für bessere Performance) ---
+# --- Datenbeschaffung (mit 10 Minuten Cache) ---
 @st.cache_data(ttl=600)
 def fetch_gw2_data():
-    # Wir verzichten auf eine externe JSON und speichern die Top-Items direkt im Skript,
-    # das ist für Cloud-Apps robuster und spart Dateiverwaltung.
     top_items = [
         24594, 24615, 24589, 46738, 19685, 19684, 46682, 73248, 12824, 12820, 
         12825, 12821, 74332, 46683, 46736, 24836, 24818, 24828, 24814, 46739, 
@@ -23,7 +21,7 @@ def fetch_gw2_data():
     recipes_map = {}
     needed_items = set(top_items)
     
-    # 1. Rezeptbäume laden (Breadth-First max 3 Ebenen)
+    # 1. Rezeptbäume laden
     queue = list(top_items)
     for depth in range(3):
         next_queue = set()
@@ -127,25 +125,28 @@ try:
                 "Item": item_names[item_id],
                 "Verkauf (TP)": format_money(sell_price),
                 "Herstellkosten": format_money(opt_cost),
-                "Netto-Profit": round(profit / 100, 2), # Für die Sortierung als rohe Zahl in Silber
+                "Netto-Profit": round(profit / 100, 2),
                 "Profit Ansicht": format_money(profit),
                 "Strategie": action
             })
             full_data_map[item_names[item_id]] = root_node
 
-        df = pd.DataFrame(results)
-        df = df.sort_values(by="Netto-Profit", ascending=False).reset_index(drop=True)
-        
-        # Zeige Tabelle an (die "Netto-Profit" Spalte wird versteckt, sie war nur zum Sortieren)
-        st.dataframe(df[["Item", "Verkauf (TP)", "Herstellkosten", "Profit Ansicht", "Strategie"]], use_container_width=True)
+        # --- DER FIX: Wir prüfen erst, ob die Liste voll ist ---
+        if len(results) > 0:
+            df = pd.DataFrame(results)
+            df = df.sort_values(by="Netto-Profit", ascending=False).reset_index(drop=True)
+            
+            st.dataframe(df[["Item", "Verkauf (TP)", "Herstellkosten", "Profit Ansicht", "Strategie"]], use_container_width=True)
 
-        st.markdown("### 🔍 Deep Dive: Rezept-Analyse")
-        selected_item = st.selectbox("Wähle ein Item für den detaillierten Make-vs-Buy Baum:", df["Item"])
-        
-        if selected_item:
-            tree_node = full_data_map[selected_item]
-            tree_text = build_tree_string(tree_node, item_names, 1)
-            st.code(tree_text, language="markdown")
+            st.markdown("### 🔍 Deep Dive: Rezept-Analyse")
+            selected_item = st.selectbox("Wähle ein Item für den detaillierten Make-vs-Buy Baum:", df["Item"])
+            
+            if selected_item:
+                tree_node = full_data_map[selected_item]
+                tree_text = build_tree_string(tree_node, item_names, 1)
+                st.code(tree_text, language="markdown")
+        else:
+            st.warning("Keine Preisdaten gefunden. Möglicherweise lädt die GW2 API gerade langsam. Lade die Seite kurz neu!")
             
 except Exception as e:
     st.error(f"Es gab einen Fehler bei der API-Abfrage: {e}")
