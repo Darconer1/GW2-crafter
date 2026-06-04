@@ -342,8 +342,8 @@ Gib deine Bewertung in folgendem Format:
 COOLDOWN_IDS = {
     "Deldrimor Steel Ingot": 46738,
     "Elonian Leather Square": 46739,
-    "Chiffon Bolt": 46740,
-    "Spiritwood Plank": 46741
+    "Bolt of Damask": 46741,
+    "Spiritwood Plank": 46736
 }
 
 RAW_MAT_IDS = {
@@ -454,20 +454,25 @@ with tab1:
             craft_cost = (get_price(19684) * 50) + (get_price(19697) * 90) + (get_price(19702) * 40) + 1135
         elif name == "Elonian Leather Square":
             craft_cost = (get_price(19728) * 50) + (get_price(19718) * 40) + (get_price(19719) * 20) + (get_price(19725) * 40) + 15
-        elif name == "Chiffon Bolt":
+        elif name == "Bolt of Damask":
             craft_cost = (get_price(19748) * 100) + (get_price(19739) * 40) + (get_price(19741) * 20) + (get_price(19743) * 40) + 15
-        else: # Spiritwood Plank
+        else:  # Spiritwood Plank
             craft_cost = (get_price(19722) * 50) + (get_price(19710) * 40) + (get_price(19709) * 30) + (get_price(19713) * 60) + 15
 
-        revenue = sell_price * fee_multiplier
-        profit = revenue - craft_cost if live_data else 0
-        
         history_values = [d["sell"] for d in price_history.get(str(item_id), {}).get("data", [])]
         moving_avg, price_vals = moving_average(item_id, 30)
         historical_values = price_vals if price_vals else history_values
+
+        # Fallback: wenn aktueller Live-Preis fehlt, verwende den letzten historischen Verkaufspreis
+        if sell_price <= 0 and history_values:
+            sell_price = history_values[-1]
+
+        revenue = sell_price * fee_multiplier
+        profit = revenue - craft_cost if (live_data or history_values) else 0
+
         avg_historic = sum(history_values) / len(history_values) if history_values else craft_cost
-        
-        if not live_data:
+
+        if not (live_data or history_values):
             rec = "⚠️ API Fehler"
         elif use_ai_daily:
             assessment = get_ai_assessment(
