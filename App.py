@@ -7,6 +7,7 @@ from datetime import datetime
 import sqlite3
 import statistics
 import math
+import time
 from openai import OpenAI
 
 # Seiteneinstellungen
@@ -107,11 +108,47 @@ def normalize_api_key(key_value):
     return key_value if key_value else None
 
 
+AI_CACHE_TTL = 3600
+AI_RATE_LIMIT_SECONDS = 30
+AI_MAX_TOKENS = 120
+
+
 def get_openai_api_key():
     key = normalize_api_key(os.getenv("OPENAI_API_KEY"))
     if key:
         return key
     return normalize_api_key(st.secrets.get("OPENAI_API_KEY"))
+
+
+def is_ai_rate_limited():
+    now = time.time()
+    last_call = st.session_state.get("last_ai_call", 0)
+    remaining = AI_RATE_LIMIT_SECONDS - (now - last_call)
+    if remaining > 0:
+        return True, int(remaining)
+    st.session_state["last_ai_call"] = now
+    return False, 0
+
+
+def heuristic_ai_assessment(current_price, moving_avg):
+    if moving_avg and current_price < moving_avg * 0.95:
+        return {
+            "assessment": "🟢 Kaufempfehlung",
+            "reasoning": f"Preis {current_price} unter Durchschnitt ({int(moving_avg)})",
+            "confidence": "Mittel (Heuristik)"
+        }
+    elif moving_avg and current_price > moving_avg * 1.05:
+        return {
+            "assessment": "🔴 Nicht kaufen",
+            "reasoning": f"Preis {current_price} über Durchschnitt ({int(moving_avg)})",
+            "confidence": "Mittel (Heuristik)"
+        }
+    else:
+        return {
+            "assessment": "🟡 Abwarten",
+            "reasoning": "Preis im Normbereich",
+            "confidence": "Mittel (Heuristik)"
+        }
 
 
 @st.cache_data(ttl=60)
@@ -206,35 +243,19 @@ def recommend_buy(item_id, current_price=None, days=30):
         return {'decision':'hold','reason':'Preis im Normbereich'}
 
 # --- KI-BEWERTUNG FÜR KAUFENTSCHEIDUNGEN ---
-@st.cache_data(ttl=600)
-def get_ai_assessment(item_name, price_history_data, current_price, moving_avg):
+@st.cache_data(ttl=AI_CACHE_TTL)
+def get_ai_assessment(item_name, price_history_data, current_price, moving_avg, use_ai=False):
     """
     Bewertet mit KI, ob es sinnvoll ist, ein Material auf Vorrat zu kaufen
     basierend auf historischen Daten und Trends
     """
-    # Falls kein API-Key, fallback zu einfacher Heuristik
+    if not use_ai:
+        return heuristic_ai_assessment(current_price, moving_avg)
+
     api_key = get_openai_api_key()
     if not api_key:
-        # Fallback: Simple Heuristik ohne KI
-        if moving_avg and current_price < moving_avg * 0.95:
-            return {
-                "assessment": "🟢 Kaufempfehlung",
-                "reasoning": f"Preis {current_price} unter Durchschnitt ({int(moving_avg)})",
-                "confidence": "Mittel (Heuristik)"
-            }
-        elif moving_avg and current_price > moving_avg * 1.05:
-            return {
-                "assessment": "🔴 Nicht kaufen",
-                "reasoning": f"Preis {current_price} über Durchschnitt ({int(moving_avg)})",
-                "confidence": "Mittel (Heuristik)"
-            }
-        else:
-            return {
-                "assessment": "🟡 Abwarten",
-                "reasoning": "Preis im Normbereich",
-                "confidence": "Mittel (Heuristik)"
-            }
-    
+        return heuristic_ai_assessment(current_price, moving_avg)
+
     try:
         client = OpenAI(api_key=api_key)
         
@@ -270,8 +291,8 @@ Gib deine Bewertung in folgendem Format:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=200
+            temperature=0.3,
+            max_tokens=AI_MAX_TOKENS
         )
         
         ai_response = response.choices[0].message.content
@@ -378,6 +399,16 @@ with st.sidebar:
     fee_multiplier = 0.85 if tp_fee_toggle else 1.0
     st.subheader("💎 Geistersplitter-Wertung")
     relic_per_shard = st.number_input("Fraktal-Relikte pro Geistersplitter", value=28)
+    st.divider()
+    use_ai = st.checkbox(
+        "KI für Kaufentscheidung nutzen",
+        value=False,
+        help="Deaktivieren, um weniger OpenAI-Anfragen zu senden. Für kostenlose Konten empfohlen."
+    )
+    if use_ai:
+        st.info("KI-Abfragen werden pro Material bis zu einmal pro Stunde gecached.")
+    else:
+        st.info("KI ist deaktiviert. Es wird stattdessen die lokale Heuristik verwendet.")
 
 tab1, tab2, tab3, tab4 = st.tabs(["🕒 Daily Cooldowns", "📉 Fraktale", "🔮 Mystic Forge", "📊 Historie"])
 
@@ -513,18 +544,29 @@ with tab4:
             st.divider()
             st.subheader("🤖 KI-Kaufentscheidung")
 
-            openai_api_key = get_openai_api_key()
-            if not openai_api_key:
-                st.warning("Streamlit-Secret `OPENAI_API_KEY` nicht gefunden. KI-Analyse verwendet stattdessen die lokale Heuristik.")
-            
             current_price = get_price(item_id, "sells")
             moving_avg, price_vals = moving_average(item_id, 30)
-            
+
+            if use_ai:
+                if not get_openai_api_key():
+                    st.warning("Streamlit-Secret `OPENAI_API_KEY` nicht gefunden. KI-Analyse verwendet stattdessen die lokale Heuristik.")
+                    ai_active = False
+                else:
+                    rate_limited, wait = is_ai_rate_limited()
+                    if rate_limited:
+                        st.warning(f"KI-Abfragen sind auf {AI_RATE_LIMIT_SECONDS} Sekunden beschränkt. Bitte {wait}s warten.")
+                        ai_active = False
+                    else:
+                        ai_active = True
+            else:
+                ai_active = False
+
             assessment = get_ai_assessment(
                 selected_trend_name,
                 price_vals if price_vals else sell_prices,
                 current_price,
-                moving_avg
+                moving_avg,
+                use_ai=ai_active
             )
             
             col1, col2, col3 = st.columns([2, 3, 1])
