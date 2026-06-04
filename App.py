@@ -95,6 +95,25 @@ def format_gw2_money(copper):
     elif silver > 0: return f"{silver}s {rem_copper}c"
     else: return f"{rem_copper}c"
 
+
+def normalize_api_key(key_value):
+    if not key_value:
+        return None
+    key_value = str(key_value).strip()
+    if key_value.startswith("OPENAI_API_KEY") and "=" in key_value:
+        key_value = key_value.split("=", 1)[1].strip()
+    if (key_value.startswith('"') and key_value.endswith('"')) or (key_value.startswith("'") and key_value.endswith("'")):
+        key_value = key_value[1:-1].strip()
+    return key_value if key_value else None
+
+
+def get_openai_api_key():
+    key = normalize_api_key(os.getenv("OPENAI_API_KEY"))
+    if key:
+        return key
+    return normalize_api_key(st.secrets.get("OPENAI_API_KEY"))
+
+
 @st.cache_data(ttl=60)
 def fetch_live_prices(item_ids):
     debug_log = []
@@ -194,7 +213,7 @@ def get_ai_assessment(item_name, price_history_data, current_price, moving_avg):
     basierend auf historischen Daten und Trends
     """
     # Falls kein API-Key, fallback zu einfacher Heuristik
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = get_openai_api_key()
     if not api_key:
         # Fallback: Simple Heuristik ohne KI
         if moving_avg and current_price < moving_avg * 0.95:
@@ -493,6 +512,10 @@ with tab4:
             # KI-Bewertung
             st.divider()
             st.subheader("🤖 KI-Kaufentscheidung")
+
+            openai_api_key = get_openai_api_key()
+            if not openai_api_key:
+                st.warning("Streamlit-Secret `OPENAI_API_KEY` nicht gefunden. KI-Analyse verwendet stattdessen die lokale Heuristik.")
             
             current_price = get_price(item_id, "sells")
             moving_avg, price_vals = moving_average(item_id, 30)
