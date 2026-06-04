@@ -7,6 +7,7 @@ from datetime import datetime
 import sqlite3
 import statistics
 import math
+from openai import OpenAI
 
 # Seiteneinstellungen
 st.set_page_config(page_title="GW2 Gold-Optimierer", layout="wide", initial_sidebar_state="collapsed")
@@ -185,6 +186,109 @@ def recommend_buy(item_id, current_price=None, days=30):
     else:
         return {'decision':'hold','reason':'Preis im Normbereich'}
 
+# --- KI-BEWERTUNG FÜR KAUFENTSCHEIDUNGEN ---
+@st.cache_data(ttl=600)
+def get_ai_assessment(item_name, price_history_data, current_price, moving_avg):
+    """
+    Bewertet mit KI, ob es sinnvoll ist, ein Material auf Vorrat zu kaufen
+    basierend auf historischen Daten und Trends
+    """
+    # Falls kein API-Key, fallback zu einfacher Heuristik
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        # Fallback: Simple Heuristik ohne KI
+        if moving_avg and current_price < moving_avg * 0.95:
+            return {
+                "assessment": "🟢 Kaufempfehlung",
+                "reasoning": f"Preis {current_price} unter Durchschnitt ({int(moving_avg)})",
+                "confidence": "Mittel (Heuristik)"
+            }
+        elif moving_avg and current_price > moving_avg * 1.05:
+            return {
+                "assessment": "🔴 Nicht kaufen",
+                "reasoning": f"Preis {current_price} über Durchschnitt ({int(moving_avg)})",
+                "confidence": "Mittel (Heuristik)"
+            }
+        else:
+            return {
+                "assessment": "🟡 Abwarten",
+                "reasoning": "Preis im Normbereich",
+                "confidence": "Mittel (Heuristik)"
+            }
+    
+    try:
+        client = OpenAI(api_key=api_key)
+        
+        # Zusammenfassung der Preis-Daten
+        if isinstance(price_history_data, list) and len(price_history_data) > 0:
+            recent_prices = price_history_data[-10:] if len(price_history_data) >= 10 else price_history_data
+            price_trend = "stabil" if len(set(recent_prices)) <= 3 else ("steigend" if recent_prices[-1] > recent_prices[0] else "fallend")
+            min_price = min(recent_prices)
+            max_price = max(recent_prices)
+            price_range = max_price - min_price
+        else:
+            price_trend = "unbekannt"
+            min_price = current_price
+            max_price = current_price
+            price_range = 0
+        
+        # KI-Anfrage
+        prompt = f"""
+Du bist ein Experte für GW2 (Guild Wars 2) Wirtschaft und Rohstoffpreise.
+Analysiere die folgenden Daten für das Material '{item_name}' und gib eine Kaufempfehlung:
+
+- Aktueller Preis: {current_price} Kupfer ({current_price/100:.0f} Silber)
+- 30-Tage Durchschnitt: {moving_avg} Kupfer ({moving_avg/100:.0f} Silber)
+- Preis-Trend (letzte 10 Einträge): {price_trend}
+- Min-Preis: {min_price}, Max-Preis: {max_price}, Range: {price_range}
+
+Gib deine Bewertung in folgendem Format:
+1. EMPFEHLUNG: (Kaufen / Nicht kaufen / Abwarten)
+2. BEGRÜNDUNG: (kurz, max 2 Sätze)
+3. VERTRAUEN: (Hoch / Mittel / Niedrig)
+"""
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=200
+        )
+        
+        ai_response = response.choices[0].message.content
+        
+        # Parse response
+        lines = ai_response.split('\n')
+        assessment = "🟡 Abwarten"
+        reasoning = ""
+        confidence = "Mittel"
+        
+        for line in lines:
+            if "EMPFEHLUNG:" in line:
+                if "Kaufen" in line:
+                    assessment = "🟢 Kaufempfehlung"
+                elif "Nicht kaufen" in line:
+                    assessment = "🔴 Nicht kaufen"
+            elif "BEGRÜNDUNG:" in line:
+                reasoning = line.split("BEGRÜNDUNG:")[-1].strip()
+            elif "VERTRAUEN:" in line:
+                confidence = line.split("VERTRAUEN:")[-1].strip()
+        
+        return {
+            "assessment": assessment,
+            "reasoning": reasoning or "KI-Analyse durchgeführt",
+            "confidence": f"Hoch (KI: GPT-3.5)"
+        }
+    
+    except Exception as e:
+        # Bei Fehler fallback
+        st.warning(f"KI-Analyse nicht verfügbar: {str(e)}")
+        return {
+            "assessment": "🟡 Abwarten",
+            "reasoning": "KI-Service temporär nicht verfügbar",
+            "confidence": "Niedrig"
+        }
+
 # --- DATEN-DEFINITIONEN (Korrigierte IDs) ---
 COOLDOWN_IDS = {
     "Deldrimor-Stahlbarren": 46738,
@@ -358,7 +462,9 @@ with tab4:
     selected_trend_name = st.selectbox("Wähle ein Material:", list(all_history_options.keys()))
     
     if selected_trend_name:
-        item_history = price_history.get(str(all_history_options[selected_trend_name]), {}).get("data", [])
+        item_id = all_history_options[selected_trend_name]
+        item_history = price_history.get(str(item_id), {}).get("data", [])
+        
         if len(item_history) < 2:
             st.info("Sammle noch Daten... Lade die Seite später neu, um Diagramme zu sehen.")
         else:
@@ -366,4 +472,42 @@ with tab4:
             df_chart["timestamp"] = pd.to_datetime(df_chart["timestamp"])
             df_chart["Verkauf (Silber)"] = df_chart["sell"] / 100
             df_chart["Einkauf (Silber)"] = df_chart["buy"] / 100
+            
+            # Chart anzeigen
             st.line_chart(df_chart.set_index("timestamp")[["Verkauf (Silber)", "Einkauf (Silber)"]])
+            
+            # Statistiken
+            col1, col2, col3, col4 = st.columns(4)
+            sell_prices = df_chart["sell"].tolist()
+            
+            with col1:
+                st.metric("Aktuell", format_gw2_money(sell_prices[-1]) if sell_prices else "N/A")
+            with col2:
+                avg_price = sum(sell_prices) / len(sell_prices) if sell_prices else 0
+                st.metric("Ø 30-Tage", format_gw2_money(int(avg_price)))
+            with col3:
+                st.metric("Minimum", format_gw2_money(min(sell_prices)) if sell_prices else "N/A")
+            with col4:
+                st.metric("Maximum", format_gw2_money(max(sell_prices)) if sell_prices else "N/A")
+            
+            # KI-Bewertung
+            st.divider()
+            st.subheader("🤖 KI-Kaufentscheidung")
+            
+            current_price = get_price(item_id, "sells")
+            moving_avg, price_vals = moving_average(item_id, 30)
+            
+            assessment = get_ai_assessment(
+                selected_trend_name,
+                price_vals if price_vals else sell_prices,
+                current_price,
+                moving_avg
+            )
+            
+            col1, col2, col3 = st.columns([2, 3, 1])
+            with col1:
+                st.markdown(f"### {assessment['assessment']}")
+            with col2:
+                st.write(f"**Begründung:** {assessment['reasoning']}")
+            with col3:
+                st.write(f"**Vertrauen:** {assessment['confidence']}")
