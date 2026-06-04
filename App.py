@@ -109,7 +109,8 @@ def normalize_api_key(key_value):
 
 
 AI_CACHE_TTL = 3600
-AI_RATE_LIMIT_SECONDS = 30
+AI_MAX_CALLS_PER_MINUTE = 20
+AI_RATE_LIMIT_WINDOW_SECONDS = 60
 AI_MAX_TOKENS = 120
 
 
@@ -122,11 +123,14 @@ def get_openai_api_key():
 
 def is_ai_rate_limited():
     now = time.time()
-    last_call = st.session_state.get("last_ai_call", 0)
-    remaining = AI_RATE_LIMIT_SECONDS - (now - last_call)
-    if remaining > 0:
-        return True, int(remaining)
-    st.session_state["last_ai_call"] = now
+    timestamps = st.session_state.get("ai_call_timestamps", [])
+    timestamps = [ts for ts in timestamps if now - ts < AI_RATE_LIMIT_WINDOW_SECONDS]
+    if len(timestamps) >= AI_MAX_CALLS_PER_MINUTE:
+        next_available = int(math.ceil(AI_RATE_LIMIT_WINDOW_SECONDS - (now - timestamps[0]))) if timestamps else AI_RATE_LIMIT_WINDOW_SECONDS
+        st.session_state["ai_call_timestamps"] = timestamps
+        return True, next_available
+    timestamps.append(now)
+    st.session_state["ai_call_timestamps"] = timestamps
     return False, 0
 
 
@@ -256,6 +260,11 @@ def get_ai_assessment(item_name, price_history_data, current_price, moving_avg, 
     if not api_key:
         return heuristic_ai_assessment(current_price, moving_avg)
 
+    rate_limited, wait = is_ai_rate_limited()
+    if rate_limited:
+        st.warning(f"KI-Anfragen sind auf {AI_MAX_CALLS_PER_MINUTE} pro {AI_RATE_LIMIT_WINDOW_SECONDS} Sekunden begrenzt. Bitte {wait}s warten.")
+        return heuristic_ai_assessment(current_price, moving_avg)
+
     try:
         client = OpenAI(api_key=api_key)
         
@@ -331,39 +340,39 @@ Gib deine Bewertung in folgendem Format:
 
 # --- DATEN-DEFINITIONEN (Korrigierte IDs) ---
 COOLDOWN_IDS = {
-    "Deldrimor-Stahlbarren": 46738,
-    "Elonischer Lederquadrat": 46739,
-    "Chiffon-Ballen": 46740,
-    "Geistreichen-Holzplanke": 46741
+    "Deldrimor Steel Ingot": 46738,
+    "Elonian Leather Square": 46739,
+    "Chiffon Bolt": 46740,
+    "Spiritwood Plank": 46741
 }
 
 RAW_MAT_IDS = {
-    "Mithrilerz": 19684,
-    "Eisenerz": 19697,
-    "Platinerz": 19702,
-    "Dicker Lederabschnitt": 19728,
-    "Dünner Lederabschnitt": 19718,
-    "Grober Lederabschnitt": 19719,
-    "Rauher Lederabschnitt": 19725,
-    "Seidenrest": 19748,
-    "Wollrest": 19739,
-    "Baumwollrest": 19741,
-    "Leinenrest": 19743,
-    "Altes Holzblock": 19722,
-    "Geschmeidiges Holzblock": 19710,
-    "Abgelagertes Holzblock": 19709,
-    "Hartes Holzblock": 19713
+    "Mithril Ore": 19684,
+    "Iron Ore": 19697,
+    "Platinum Ore": 19702,
+    "Thick Leather Section": 19728,
+    "Thin Leather Section": 19718,
+    "Rugged Leather Section": 19719,
+    "Coarse Leather Section": 19725,
+    "Silk Scrap": 19748,
+    "Wool Scrap": 19739,
+    "Cotton Scrap": 19741,
+    "Linen Scrap": 19743,
+    "Ancient Wood Log": 19722,
+    "Seasoned Wood Log": 19710,
+    "Aged Wood Log": 19709,
+    "Hardwood Log": 19713
 }
 
 MF_MATERIAL_PARE = {
-    "Blut": {"t5": 24294, "t6": 24295, "name": "Kraftvolles Blut"},
-    "Knochen": {"t5": 24341, "t6": 24358, "name": "Antiker Knochen"},
-    "Klaue": {"t5": 24350, "t6": 24351, "name": "Scheußliche Klaue"},
-    "Fangzahn": {"t5": 24276, "t6": 24271, "name": "Scheußlicher Fangzahn"},
-    "Schuppe": {"t5": 24283, "t6": 24289, "name": "Gepanzerte Schuppe"},
-    "Giftbeutel": {"t5": 24277, "t6": 24280, "name": "Wirksamer Giftbeutel"},
-    "Totem": {"t5": 24299, "t6": 24300, "name": "Verziertes Totem"},
-    "Staub": {"t5": 24274, "t6": 24275, "name": "Kristalliner Staub"}
+    "Blood": {"t5": 24294, "t6": 24295, "name": "Powerful Blood"},
+    "Bone": {"t5": 24341, "t6": 24358, "name": "Ancient Bone"},
+    "Claw": {"t5": 24350, "t6": 24351, "name": "Horrible Claw"},
+    "Fangtooth": {"t5": 24276, "t6": 24271, "name": "Horrible Fangtooth"},
+    "Scale": {"t5": 24283, "t6": 24289, "name": "Armored Scale"},
+    "Venom Sac": {"t5": 24277, "t6": 24280, "name": "Potent Venom Sac"},
+    "Totem": {"t5": 24299, "t6": 24300, "name": "Ornate Totem"},
+    "Dust": {"t5": 24274, "t6": 24275, "name": "Crystal Dust"}
 }
 
 ECTO_ID = 19721
@@ -400,15 +409,32 @@ with st.sidebar:
     st.subheader("💎 Geistersplitter-Wertung")
     relic_per_shard = st.number_input("Fraktal-Relikte pro Geistersplitter", value=28)
     st.divider()
-    use_ai = st.checkbox(
-        "KI für Kaufentscheidung nutzen",
-        value=False,
-        help="Deaktivieren, um weniger OpenAI-Anfragen zu senden. Für kostenlose Konten empfohlen."
+    use_ai_daily = st.checkbox(
+        "KI für Daily Cooldown-Bewertung nutzen",
+        value=True,
+        help="Standardmäßig aktiv für die tägliche Kaufempfehlung."
     )
-    if use_ai:
-        st.info("KI-Abfragen werden pro Material bis zu einmal pro Stunde gecached.")
+    use_ai_history = st.checkbox(
+        "KI in Historischer Trendanalyse aktivieren",
+        value=False,
+        help="Nur bei Bedarf einschalten."
+    )
+    use_ai_fractal = st.checkbox(
+        "KI für Fraktal-Analyse aktivieren",
+        value=False,
+        help="Nur bei Bedarf einschalten."
+    )
+    use_ai_mystic_forge = st.checkbox(
+        "KI für Mystic Forge Analyse aktivieren",
+        value=False,
+        help="Nur bei Bedarf einschalten."
+    )
+    if use_ai_daily:
+        st.info("Die KI wird derzeit nur für die Daily Cooldown-Bewertung verwendet.")
     else:
-        st.info("KI ist deaktiviert. Es wird stattdessen die lokale Heuristik verwendet.")
+        st.info("Die Daily Cooldown-Bewertung nutzt die lokale Heuristik.")
+    if use_ai_history or use_ai_fractal or use_ai_mystic_forge:
+        st.warning("KI außerhalb der Daily Cooldowns wird nur bei expliziter Aktivierung verwendet.")
 
 tab1, tab2, tab3, tab4 = st.tabs(["🕒 Daily Cooldowns", "📉 Fraktale", "🔮 Mystic Forge", "📊 Historie"])
 
@@ -424,26 +450,40 @@ with tab1:
         sell_price = get_price(item_id, "sells")
         
         # Komplett korrigierte Mathematik nach echten GW2 Rezepten (inkl. Händlerkosten für Thermokatalytisch/Kohle/Primordium)
-        if name == "Deldrimor-Stahlbarren":
+        if name == "Deldrimor Steel Ingot":
             craft_cost = (get_price(19684) * 50) + (get_price(19697) * 90) + (get_price(19702) * 40) + 1135
-        elif name == "Elonischer Lederquadrat":
+        elif name == "Elonian Leather Square":
             craft_cost = (get_price(19728) * 50) + (get_price(19718) * 40) + (get_price(19719) * 20) + (get_price(19725) * 40) + 15
-        elif name == "Chiffon-Ballen":
+        elif name == "Chiffon Bolt":
             craft_cost = (get_price(19748) * 100) + (get_price(19739) * 40) + (get_price(19741) * 20) + (get_price(19743) * 40) + 15
-        else: # Geistreichen-Holzplanke
+        else: # Spiritwood Plank
             craft_cost = (get_price(19722) * 50) + (get_price(19710) * 40) + (get_price(19709) * 30) + (get_price(19713) * 60) + 15
 
         revenue = sell_price * fee_multiplier
         profit = revenue - craft_cost if live_data else 0
         
-        # Bewertung
-        past_costs = [d["sell"] for d in price_history.get(str(item_id), {}).get("data", [])]
-        avg_historic = sum(past_costs) / len(past_costs) if past_costs else craft_cost
+        history_values = [d["sell"] for d in price_history.get(str(item_id), {}).get("data", [])]
+        moving_avg, price_vals = moving_average(item_id, 30)
+        historical_values = price_vals if price_vals else history_values
+        avg_historic = sum(history_values) / len(history_values) if history_values else craft_cost
         
-        if not live_data: rec = "⚠️ API Fehler"
-        elif craft_cost < avg_historic * 0.96: rec = "🟢 KAUFEN"
-        elif craft_cost > avg_historic * 1.04: rec = "🔴 ABWARTEN"
-        else: rec = "🟡 NORMAL"
+        if not live_data:
+            rec = "⚠️ API Fehler"
+        elif use_ai_daily:
+            assessment = get_ai_assessment(
+                name,
+                historical_values,
+                sell_price,
+                moving_avg,
+                use_ai=True
+            )
+            rec = assessment["assessment"]
+        elif craft_cost < avg_historic * 0.96:
+            rec = "🟢 Kaufempfehlung"
+        elif craft_cost > avg_historic * 1.04:
+            rec = "🔴 Nicht kaufen"
+        else:
+            rec = "🟡 Abwarten"
             
         cooldown_results.append({
             "Gegenstand": name,
@@ -483,12 +523,12 @@ with tab2:
 # --- TAB 3: MYSTIC FORGE ---
 with tab3:
     st.header("🔮 Schmiede-Materialaufwertung")
-    dust_price = get_price(MF_MATERIAL_PARE["Staub"]["t6"], "buys")
-    st.markdown(f"**Kristalliner Staub (Einkauf):** `{format_gw2_money(dust_price)}`")
+    dust_price = get_price(MF_MATERIAL_PARE["Dust"]["t6"], "buys")
+    st.markdown(f"**Crystal Dust (Einkauf):** `{format_gw2_money(dust_price)}`")
 
     mf_results = []
     for mat_key, ids in MF_MATERIAL_PARE.items():
-        if mat_key == "Staub": continue
+        if mat_key == "Dust": continue
         t5_buy, t6_sell = get_price(ids["t5"], "buys"), get_price(ids["t6"], "sells")
         total_craft_cost = (26 * t5_buy) + (5 * dust_price) # 25 + 1
         gross_revenue = 4.25 * t6_sell * fee_multiplier
@@ -547,14 +587,14 @@ with tab4:
             current_price = get_price(item_id, "sells")
             moving_avg, price_vals = moving_average(item_id, 30)
 
-            if use_ai:
+            if use_ai_history:
                 if not get_openai_api_key():
                     st.warning("Streamlit-Secret `OPENAI_API_KEY` nicht gefunden. KI-Analyse verwendet stattdessen die lokale Heuristik.")
                     ai_active = False
                 else:
                     rate_limited, wait = is_ai_rate_limited()
                     if rate_limited:
-                        st.warning(f"KI-Abfragen sind auf {AI_RATE_LIMIT_SECONDS} Sekunden beschränkt. Bitte {wait}s warten.")
+                        st.warning(f"KI-Anfragen sind auf {AI_MAX_CALLS_PER_MINUTE} pro {AI_RATE_LIMIT_WINDOW_SECONDS} Sekunden beschränkt. Bitte {wait}s warten.")
                         ai_active = False
                     else:
                         ai_active = True
