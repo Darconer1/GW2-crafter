@@ -110,7 +110,7 @@ def fetch_live_prices(item_ids):
         response = requests.get(url, headers=headers, timeout=10)
         debug_log.append(f"HTTP Status Code: {response.status_code}")
         
-        if response.status_code == 200:
+        if response.status_code in [200, 206]:  # 206 = Partial Content (Range Request)
             data = response.json()
             debug_log.append(f"Erfolgreich geladen: {len(data)} Items.")
             return {int(item["id"]): item for item in data}, debug_log
@@ -129,7 +129,7 @@ def fetch_price_history_api(item_id):
     headers = {"User-Agent": "GW2-Crafter-Streamlit-Bot/1.0"}
     try:
         r = requests.get(url, headers=headers, timeout=8)
-        if r.status_code == 200:
+        if r.status_code in [200, 206]:  # 206 = Partial Content
             return r.json()
     except Exception:
         return None
