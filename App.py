@@ -4,12 +4,16 @@ import pandas as pd
 import os
 import json
 from datetime import datetime
+import sqlite3
+import statistics
+import math
 
 # Seiteneinstellungen
 st.set_page_config(page_title="GW2 Gold-Optimierer", layout="wide", initial_sidebar_state="collapsed")
 
 # --- HISTORISCHE DATENVERWALTUNG ---
 HISTORY_FILE = "price_history.json"
+DB_FILE = "price_history.db"
 
 def load_price_history():
     if os.path.exists(HISTORY_FILE):
@@ -36,6 +40,50 @@ def update_history_entry(history, item_id, name, sell_price, buy_price):
         })
     if len(history[str_id]["data"]) > 100:
         history[str_id]["data"].pop(0)
+
+
+# --- SQLITE DB FÜR LANGZEIT-SPEICHER ---
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS prices (
+        item_id INTEGER,
+        timestamp TEXT,
+        sell INTEGER,
+        buy INTEGER
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+def log_prices_to_db(item_id, sell, buy):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO prices (item_id, timestamp, sell, buy) VALUES (?, ?, ?, ?)",
+              (int(item_id), datetime.now().isoformat(), int(sell or 0), int(buy or 0)))
+    # Keep DB size small: delete entries older than 120 days (approx)
+    c.execute("DELETE FROM prices WHERE timestamp < datetime('now','-120 days')")
+    conn.commit()
+    conn.close()
+
+def fetch_db_prices(item_id, days=30):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT sell, buy, timestamp FROM prices WHERE item_id=? AND timestamp>=datetime('now',?-0) ORDER BY timestamp",
+              (int(item_id), f'-{days} days'))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def fetch_db_prices_simple(item_id, days=30):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT sell, timestamp FROM prices WHERE item_id=? AND timestamp>=datetime('now',? ) ORDER BY timestamp",
+              (int(item_id), f'-{days} days'))
+    rows = c.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
 
 # --- HILFSFUNKTIONEN ---
 def format_gw2_money(copper):
@@ -72,6 +120,70 @@ def fetch_live_prices(item_ids):
         debug_log.append(f"Verbindungsfehler (Timeout/Block): {e}")
         
     return {}, debug_log
+
+
+# Versucht, Verlauf von der offiziellen API zu laden (falls verfügbar)
+@st.cache_data(ttl=3600)
+def fetch_price_history_api(item_id):
+    url = f"https://api.guildwars2.com/v2/commerce/prices/{item_id}/history"
+    headers = {"User-Agent": "GW2-Crafter-Streamlit-Bot/1.0"}
+    try:
+        r = requests.get(url, headers=headers, timeout=8)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        return None
+    return None
+
+def moving_average(item_id, days=30):
+    # try sqlite first
+    try:
+        vals = fetch_db_prices_simple(item_id, days)
+        vals = [v for v in vals if v and v>0]
+        if len(vals) >= 3:
+            return sum(vals)/len(vals), vals
+    except Exception:
+        pass
+
+    # fallback to local JSON
+    try:
+        hist = price_history.get(str(item_id), {}).get('data', [])
+        cutoff = datetime.now() - pd.Timedelta(days=days)
+        vals = [d['sell'] for d in hist if pd.to_datetime(d['timestamp']) >= cutoff and d.get('sell',0) > 0]
+        if vals:
+            return sum(vals)/len(vals), vals
+    except Exception:
+        pass
+    return None, []
+
+def volatility(item_id, days=30):
+    _, vals = moving_average(item_id, days)
+    vals = [v for v in vals if v and v>0]
+    if len(vals) < 2: return None
+    try:
+        sd = statistics.pstdev(vals)
+        mean = sum(vals)/len(vals)
+        return sd/mean if mean>0 else None
+    except Exception:
+        return None
+
+def recommend_buy(item_id, current_price=None, days=30):
+    if current_price is None:
+        current_price = get_price(item_id, 'sells')
+    ma, vals = moving_average(item_id, days)
+    vol = volatility(item_id, days)
+    if ma is None:
+        return {'decision':'unknown','reason':'keine Historie'}
+    # Entscheidung: wenn aktueller Preis deutlich < MA und nicht extrem volatil
+    vol = vol or 0
+    # adaptive threshold: 3 * volatility or 10% minimum
+    threshold = max(0.10, 3*vol)
+    if current_price < ma * (1 - threshold):
+        return {'decision':'buy','reason':f'Preis {current_price} < MA{days} {int(ma)} (th={threshold:.2f})'}
+    elif current_price > ma * (1 + threshold):
+        return {'decision':'avoid','reason':f'Preis {current_price} > MA{days} {int(ma)}'}
+    else:
+        return {'decision':'hold','reason':'Preis im Normbereich'}
 
 # --- DATEN-DEFINITIONEN (Korrigierte IDs) ---
 COOLDOWN_IDS = {
