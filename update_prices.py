@@ -14,8 +14,8 @@ from datetime import datetime
 COOLDOWN_IDS = {
     "Deldrimor-Stahlbarren": 46738,
     "Elonischer Lederquadrat": 46739,
-    "Chiffon-Ballen": 46740,
-    "Geistreichen-Holzplanke": 46741
+    "Chiffon-Ballen": 46741,
+    "Geistreichen-Holzplanke": 46736
 }
 
 RAW_MAT_IDS = {
