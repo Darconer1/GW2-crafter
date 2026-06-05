@@ -330,13 +330,9 @@ Gib deine Bewertung in folgendem Format:
         }
     
     except Exception as e:
-        # Bei Fehler fallback
-        st.warning(f"KI-Analyse nicht verfügbar: {str(e)}")
-        return {
-            "assessment": "🟡 Abwarten",
-            "reasoning": "KI-Service temporär nicht verfügbar",
-            "confidence": "Niedrig"
-        }
+        # Bei Fehler fallback auf lokale Historie
+        st.warning(f"KI-Analyse nicht verfügbar: {str(e)}. Fallback auf lokale Historie.")
+        return heuristic_ai_assessment(current_price, moving_avg)
 
 # --- DATEN-DEFINITIONEN (Korrigierte IDs) ---
 COOLDOWN_IDS = {
@@ -411,8 +407,8 @@ with st.sidebar:
     st.divider()
     use_ai_daily = st.checkbox(
         "KI für Daily Cooldown-Bewertung nutzen",
-        value=True,
-        help="Standardmäßig aktiv für die tägliche Kaufempfehlung."
+        value=False,
+        help="Nur bei Bedarf aktivieren. Standardmäßig werden historisch basierte Kaufempfehlungen verwendet."
     )
     use_ai_history = st.checkbox(
         "KI in Historischer Trendanalyse aktivieren",
