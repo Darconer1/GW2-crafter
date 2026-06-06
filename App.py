@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import os
 import json
+import io
 from datetime import datetime
 import sqlite3
 import statistics
@@ -155,7 +156,7 @@ def heuristic_ai_assessment(current_price, moving_avg):
         }
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=28800)
 def fetch_live_prices(item_ids):
     debug_log = []
     if not item_ids: return {}, debug_log
@@ -576,6 +577,172 @@ def calculate_fractal_loot_value(num_keys=1, fee_multiplier=0.85, relic_per_shar
     return results
 
 
+FIXED_FRACTAL_TABLE_CSV = '''Drop Rate,Item Name,API ID,Buy Price
+0.2812,"Manuscript of 'Halfway There and...'",Junk,60 Silver 00 Copper
+0.2868,"Postulate of Construction",Junk,20 Silver 00 Copper
+0.4309,"Proof of Bask's Theorem",Junk,30 Silver 00 Copper
+0.2871,"Treatise on Convergence",Junk,25 Silver 00 Copper
+0.28271,"Vial of Potent Blood",24294,75 Copper
+0.300645,"Large Bone",24341,58 Copper
+0.294865,"Large Claw",24350,66 Copper
+0.291295,"Large Scale",24288,60 Copper
+0.280245,"Large Fang",24356,60 Copper
+0.29155,"Intricate Totem",24299,68 Copper
+0.29087,"Potent Venom Sac",24282,62 Copper
+0.28645,"Pile of Incandescent Dust",24276,1 Silver 83 Copper
+0.017255,"Mini Professor Mew",48099,2 Copper
+1.95245,"+1 Agony Infusion",49424,12 Copper
+'''
+
+def parse_user_table(csv_text):
+    """
+    Erwartet CSV mit Header: Drop Rate,Item Name,API ID,Buy Price
+    Liefert Liste von dicts: {drop_rate, name, id, buy_price_copper}
+    """
+    rows = []
+    try:
+        df = pd.read_csv(io.StringIO(csv_text))
+    except Exception:
+        # try simple split fallback
+        lines = [l.strip() for l in csv_text.strip().splitlines() if l.strip()]
+        header = []
+        for i, line in enumerate(lines):
+            if i == 0:
+                header = [h.strip() for h in line.split(',')]
+                continue
+            parts = [p.strip().strip('"') for p in line.split(',')]
+            if len(parts) < 4:
+                continue
+            try:
+                dr = float(parts[0])
+            except:
+                dr = 0
+            name = parts[1]
+            api_id = parts[2]
+            buy = parts[3]
+            rows.append({'drop_rate': dr, 'name': name, 'api_id': api_id, 'buy_price': buy})
+        return rows
+
+    for _, r in df.iterrows():
+        try:
+            dr = float(r.iloc[0])
+        except Exception:
+            dr = 0
+        name = r.iloc[1]
+        api_id = r.iloc[2]
+        buy_raw = r.iloc[3]
+        # parse buy price like '60 Silver 00 Copper' or '75 Copper' or '1 Silver 83 Copper' or '2 Copper'
+        buy_copper = 0
+        try:
+            if isinstance(buy_raw, str):
+                parts = buy_raw.split()
+                # e.g. ['60','Silver','00','Copper'] or ['60','Silver']
+                vals = [p for p in parts if p.isdigit()]
+                # manual parse for common formats
+                if 'Gold' in buy_raw or 'gold' in buy_raw or 'g' in buy_raw:
+                    # not expected, skip
+                    buy_copper = 0
+                else:
+                    # Convert Silver/Copper pairs
+                    if 'Silver' in buy_raw:
+                        # find first number = silver, last number = copper if present
+                        nums = [int(x) for x in parts if x.isdigit()]
+                        if len(nums) == 1:
+                            buy_copper = nums[0] * 100
+                        elif len(nums) >= 2:
+                            buy_copper = nums[0] * 100 + nums[1]
+                    elif 'Copper' in buy_raw or buy_raw.strip().isdigit():
+                        nums = [int(x) for x in parts if x.isdigit()]
+                        buy_copper = nums[0] if nums else 0
+                    else:
+                        buy_copper = 0
+            else:
+                buy_copper = int(buy_raw)
+        except Exception:
+            buy_copper = 0
+
+        rows.append({'drop_rate': dr, 'name': name, 'api_id': api_id, 'buy_price': buy_copper})
+    return rows
+
+FIXED_FRACTAL_DROPS = parse_user_table(FIXED_FRACTAL_TABLE_CSV)
+
+
+def analyze_user_table(rows, num_keys=1, fee_multiplier=0.85):
+    """Berechnet erwarteten Wert pro Key basierend auf gegebenen Rows"""
+    # collect numeric ids to fetch
+    ids = [int(r['api_id']) for r in rows if str(r['api_id']).isdigit()]
+    live_map, dbg = fetch_live_prices(ids) if ids else ({}, [])
+
+    # update history for fetched ids
+    for r in rows:
+        if str(r['api_id']).isdigit():
+            iid = int(r['api_id'])
+            info = live_map.get(iid, {})
+            update_history_entry(price_history, iid, r['name'], info.get('sells', {}).get('unit_price', 0), info.get('buys', {}).get('unit_price', 0))
+
+    save_price_history(price_history)
+
+    results = []
+    total_expected = 0
+    for r in rows:
+        dr = r['drop_rate']
+        name = r['name']
+        api_id = r['api_id']
+        buy_price = r.get('buy_price', 0)
+
+        if str(api_id).isdigit():
+            iid = int(api_id)
+            market_sell = live_map.get(iid, {}).get('sells', {}).get('unit_price', 0)
+            market_buy = live_map.get(iid, {}).get('buys', {}).get('unit_price', 0)
+            unit = market_sell or market_buy or 0
+            immediate_vendor = 0
+        else:
+            # Junk items: use provided buy_price as vendor sale (fixed)
+            unit = 0
+            immediate_vendor = buy_price
+
+        expected_qty = dr * num_keys
+        # value if sold on TP (after fee)
+        tp_value = expected_qty * (unit * fee_multiplier)
+        vendor_value = expected_qty * immediate_vendor
+        # recommendation based on history
+        rec = None
+        reason = None
+        if str(api_id).isdigit():
+            ma, vals = moving_average(iid, 30)
+            current = unit
+            if ma:
+                if current < ma * 0.9:
+                    rec = 'lagern'
+                    reason = f'aktuell {format_gw2_money(current)} < 30d Ø {format_gw2_money(int(ma))}'
+                elif current > ma * 1.1:
+                    rec = 'sofort verkaufen'
+                    reason = f'aktuell {format_gw2_money(current)} > 30d Ø {format_gw2_money(int(ma))}'
+                else:
+                    rec = 'abwarten'
+                    reason = 'Preis im Bereich des 30d Ø'
+            else:
+                rec = 'keine Daten'
+                reason = 'keine Historie'
+
+        item_total = tp_value + vendor_value
+        total_expected += item_total
+
+        results.append({
+            'name': name,
+            'api_id': api_id,
+            'drop_rate': dr,
+            'expected_qty': expected_qty,
+            'unit_market': unit,
+            'tp_value': tp_value,
+            'vendor_value': vendor_value,
+            'recommendation': rec,
+            'reason': reason
+        })
+
+    return {'items': results, 'total_value': total_expected, 'debug': dbg}
+
+
 def ingredient_price_assessment(name, item_id, qty):
     if item_id is None or name == "Händlergebühr":
         return {
@@ -765,6 +932,8 @@ for cat in FRACTAL_LOOT_TABLE.values():
     for entry in cat:
         if entry.get("id"):
             ALL_IDS.append(entry["id"])
+# Ergänze IDs aus der fixen Fraktal-Drop-Liste
+ALL_IDS.extend([int(r['api_id']) for r in FIXED_FRACTAL_DROPS if str(r['api_id']).isdigit()])
 
 ALL_IDS = list(set(ALL_IDS))
 
@@ -797,6 +966,11 @@ if live_data:
     for name, idx in {**COOLDOWN_IDS, **RAW_MAT_IDS}.items():
         info = live_data.get(idx, {})
         update_history_entry(price_history, idx, name, info.get("sells", {}).get("unit_price", 0), info.get("buys", {}).get("unit_price", 0))
+    for row in FIXED_FRACTAL_DROPS:
+        if str(row['api_id']).isdigit():
+            iid = int(row['api_id'])
+            info = live_data.get(iid, {})
+            update_history_entry(price_history, iid, row['name'], info.get("sells", {}).get("unit_price", 0), info.get("buys", {}).get("unit_price", 0))
     save_price_history(price_history)
 
 with st.sidebar:
@@ -958,6 +1132,39 @@ with tab2:
         # Falls Shard-Wert nicht bestimmt werden konnte, Hinweis anzeigen
         if loot_analysis.get("shard_value", 0) == 0:
             st.warning("Geistersplitter-Wert konnte nicht aus Reliktpreis abgeleitet werden. Setze 'Geistersplitter-Wert pro Stück' in den Einstellungen oder überprüfe Relikt-ID.")
+
+    # --- Fixe Drop-Tabelle aus Nutzer-CSV ---
+    with st.expander("📥 Fixe Drop-Tabelle (CSV, unveränderlich)", expanded=True):
+        st.text_area("Fixe Drop-Tabelle", value=FIXED_FRACTAL_TABLE_CSV, height=260, disabled=True)
+
+    user_analysis = analyze_user_table(FIXED_FRACTAL_DROPS, num_keys=enc_amount, fee_multiplier=fee_multiplier)
+
+    st.subheader("🔎 Analyse der fixen Drop-Tabelle")
+    df_rows = []
+    for it in user_analysis['items']:
+        df_rows.append({
+            'Item': it['name'],
+            'API ID': it['api_id'],
+            'Drop-Rate': it['drop_rate'],
+            'Erw. Menge (gesamt)': round(it['expected_qty'],3),
+            'TP-Wert (nach Geb.)': format_gw2_money(int(it['tp_value'])),
+            'Sofort-Verkauf (Vendor)': format_gw2_money(int(it['vendor_value'])) if it['vendor_value']>0 else '-',
+            'Empfehlung': it['recommendation'] or '-',
+            'Begründung': it['reason'] or '-'
+        })
+
+    st.dataframe(pd.DataFrame(df_rows), use_container_width=True, hide_index=True)
+    st.markdown(f"**Erwarteter Gesamtwert (alle Keys)**: {format_gw2_money(int(user_analysis['total_value']))}")
+
+    expected_loot_value = user_analysis['total_value']
+    direct_sell_value = (enc_amount * enc_sell_price) * fee_multiplier
+    st.markdown("**Vergleich mit aktuellem Key-Verkauf**")
+    st.write(f"- Erwarteter Loot-Wert (laut fixer Tabelle): {format_gw2_money(int(expected_loot_value))}")
+    st.write(f"- Direktverkauf aller Keys (TP): {format_gw2_money(int(direct_sell_value))}")
+    if expected_loot_value > direct_sell_value:
+        st.success(f"Öffnen könnte besser sein (+{format_gw2_money(int(expected_loot_value-direct_sell_value))})")
+    else:
+        st.warning(f"Direktverkauf besser (+{format_gw2_money(int(direct_sell_value-expected_loot_value))})")
     
     st.divider()
     
