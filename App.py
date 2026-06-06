@@ -246,6 +246,107 @@ def recommend_buy(item_id, current_price=None, days=30):
     else:
         return {'decision':'hold','reason':'Preis im Normbereich'}
 
+DAILY_COOLDOWN_RECIPES = {
+    "Deldrimor Steel Ingot": [
+        {"name": "Mithril Ore", "id": 19684, "qty": 50},
+        {"name": "Iron Ore", "id": 19697, "qty": 90},
+        {"name": "Platinum Ore", "id": 19702, "qty": 40},
+        {"name": "Händlergebühr", "id": None, "qty": 1135, "fixed": True}
+    ],
+    "Elonian Leather Square": [
+        {"name": "Thick Leather Section", "id": 19728, "qty": 50},
+        {"name": "Thin Leather Section", "id": 19718, "qty": 40},
+        {"name": "Rugged Leather Section", "id": 19719, "qty": 20},
+        {"name": "Coarse Leather Section", "id": 19725, "qty": 40},
+        {"name": "Händlergebühr", "id": None, "qty": 15, "fixed": True}
+    ],
+    "Bolt of Damask": [
+        {"name": "Silk Scrap", "id": 19748, "qty": 100},
+        {"name": "Wool Scrap", "id": 19739, "qty": 40},
+        {"name": "Cotton Scrap", "id": 19741, "qty": 20},
+        {"name": "Linen Scrap", "id": 19743, "qty": 40},
+        {"name": "Händlergebühr", "id": None, "qty": 15, "fixed": True}
+    ],
+    "Spiritwood Plank": [
+        {"name": "Ancient Wood Log", "id": 19722, "qty": 50},
+        {"name": "Seasoned Wood Log", "id": 19710, "qty": 40},
+        {"name": "Aged Wood Log", "id": 19709, "qty": 30},
+        {"name": "Hardwood Log", "id": 19713, "qty": 60},
+        {"name": "Händlergebühr", "id": None, "qty": 15, "fixed": True}
+    ]
+}
+
+DAILY_COOLDOWN_USAGE = {
+    "Deldrimor Steel Ingot": [
+        "Waffen- und Rüstungscrafting",
+        "Legendäre Komponenten",
+        "Schmiede- und Rüstungsrezepte"
+    ],
+    "Elonian Leather Square": [
+        "Lederverarbeitungsexotische Rüstung",
+        "Legendäre Lederkomponenten",
+        "Rüstungsteile für Handschuhe und Stiefel"
+    ],
+    "Bolt of Damask": [
+        "Schneiderei-Exotische Rüstung",
+        "Legendäre Stoffkomponenten",
+        "Rüstungsteile wie Tunika und Beinschutz"
+    ],
+    "Spiritwood Plank": [
+        "Waffenverarbeitungswaffen",
+        "Stäbe und Gewehre",
+        "Legendäre Holzkomponenten"
+    ]
+}
+
+
+def get_item_average(item_id, days=30):
+    if item_id is None:
+        return None
+    ma, _ = moving_average(item_id, days)
+    return ma
+
+
+def ingredient_price_assessment(name, item_id, qty):
+    if item_id is None or name == "Händlergebühr":
+        return {
+            "Ingredient": name,
+            "Quantity": qty,
+            "Current": format_gw2_money(qty) if name == "Händlergebühr" else "N/A",
+            "Average": "N/A",
+            "Diff": "N/A",
+            "Recommendation": "Keine Preisbewertung",
+            "Reason": "Fixkosten"
+        }
+    current_unit = get_price(item_id, "sells") or get_price(item_id, "buys")
+    avg_unit = get_item_average(item_id, 30)
+    total_current = current_unit * qty
+    total_avg = int(avg_unit * qty) if avg_unit else None
+    diff_pct = None
+    if avg_unit and avg_unit > 0:
+        diff_pct = ((current_unit - avg_unit) / avg_unit) * 100
+    rec = "keine Daten"
+    reason = "Keine historische Daten"
+    if avg_unit and current_unit > 0:
+        if diff_pct <= -10:
+            rec = "🟢 Kaufempfehlung"
+            reason = f"{abs(diff_pct):.0f}% günstiger als 30d Ø"
+        elif diff_pct >= 10:
+            rec = "🔴 Nicht kaufen"
+            reason = f"{diff_pct:.0f}% teurer als 30d Ø"
+        else:
+            rec = "🟡 Abwarten"
+            reason = f"{diff_pct:+.0f}% gegenüber 30d Ø"
+    return {
+        "Ingredient": name,
+        "Quantity": qty,
+        "Current": format_gw2_money(total_current) if total_current else "0c",
+        "Average": format_gw2_money(total_avg) if total_avg else "N/A",
+        "Diff": f"{diff_pct:+.1f}%" if diff_pct is not None else "N/A",
+        "Recommendation": rec,
+        "Reason": reason
+    }
+
 # --- KI-BEWERTUNG FÜR KAUFENTSCHEIDUNGEN ---
 @st.cache_data(ttl=AI_CACHE_TTL)
 def get_ai_assessment(item_name, price_history_data, current_price, moving_avg, use_ai=False):
@@ -441,11 +542,13 @@ def get_price(item_id, mode="buys"):
 with tab1:
     st.header("🕒 Tägliche Veredelung")
     cooldown_results = []
-    
+    detailed_results = []
+
     for name, item_id in COOLDOWN_IDS.items():
         sell_price = get_price(item_id, "sells")
-        
-        # Komplett korrigierte Mathematik nach echten GW2 Rezepten (inkl. Händlerkosten für Thermokatalytisch/Kohle/Primordium)
+        recipe = DAILY_COOLDOWN_RECIPES.get(name, [])
+        ingredient_rows = [ingredient_price_assessment(i["name"], i.get("id"), i["qty"]) for i in recipe]
+
         if name == "Deldrimor Steel Ingot":
             craft_cost = (get_price(19684) * 50) + (get_price(19697) * 90) + (get_price(19702) * 40) + 1135
         elif name == "Elonian Leather Square":
@@ -467,6 +570,7 @@ with tab1:
         profit = revenue - craft_cost if (live_data or history_values) else 0
 
         avg_historic = sum(history_values) / len(history_values) if history_values else craft_cost
+        price_diff = ((sell_price - avg_historic) / avg_historic * 100) if avg_historic else 0
 
         if not (live_data or history_values):
             rec = "⚠️ API Fehler"
@@ -479,22 +583,61 @@ with tab1:
                 use_ai=True
             )
             rec = assessment["assessment"]
-        elif craft_cost < avg_historic * 0.96:
+        elif price_diff <= -10:
             rec = "🟢 Kaufempfehlung"
-        elif craft_cost > avg_historic * 1.04:
+        elif price_diff >= 10:
             rec = "🔴 Nicht kaufen"
         else:
             rec = "🟡 Abwarten"
-            
+
         cooldown_results.append({
             "Gegenstand": name,
             "VK-Preis": format_gw2_money(sell_price),
             "Herstellkosten": format_gw2_money(craft_cost),
             "Reingewinn": format_gw2_money(profit),
-            "Empfehlung": rec
+            "Empfehlung": rec,
+            "Preis vs Ø": f"{price_diff:+.1f}%"
         })
-        
-    st.dataframe(pd.DataFrame(cooldown_results), use_container_width=True, hide_index=True)
+
+        detailed_results.append({
+            "name": name,
+            "item_id": item_id,
+            "sell_price": sell_price,
+            "craft_cost": craft_cost,
+            "profit": profit,
+            "recommendation": rec,
+            "price_diff": price_diff,
+            "ingredient_rows": ingredient_rows,
+            "use_cases": DAILY_COOLDOWN_USAGE.get(name, [])
+        })
+
+    df_cooldowns = pd.DataFrame(cooldown_results).sort_values(by="Reingewinn", ascending=False)
+    st.markdown("### Übersicht: Daily Cooldowns nach aktuellem Gewinn")
+    st.dataframe(df_cooldowns["Gegenstand VK-Preis Herstellkosten Reingewinn Empfehlung Preis vs Ø".split()], use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.markdown("### Detaillierte Zutatenanalyse und Verwendung")
+    for entry in detailed_results:
+        with st.expander(f"{entry['name']} — Reingewinn {format_gw2_money(entry['profit'])} | Empfehlung: {entry['recommendation']}"):
+            st.markdown(f"**Aktueller Verkaufspreis:** {format_gw2_money(entry['sell_price'])} — **Herstellkosten:** {format_gw2_money(entry['craft_cost'])} — **Preis vs. 30d Ø:** {entry['price_diff']:+.1f}%")
+            st.markdown("**Zutaten & Kaufempfehlungen:**")
+            st.dataframe(pd.DataFrame(entry["ingredient_rows"]).rename(columns={
+                "Ingredient": "Zutat",
+                "Quantity": "Menge",
+                "Current": "Aktueller Preis",
+                "Average": "Ø Preis",
+                "Diff": "Abweichung",
+                "Recommendation": "Empfehlung",
+                "Reason": "Begründung"
+            }), use_container_width=True, hide_index=True)
+            st.markdown("**Mögliche Verwendung:** " + ", ".join(entry["use_cases"]))
+            st.markdown("**Warum diese Einschätzung?**")
+            if entry["recommendation"] == "🟢 Kaufempfehlung":
+                st.success(f"Aktueller Verkaufspreis liegt {abs(entry['price_diff']):.1f}% unter dem 30-Tage-Durchschnitt.")
+            elif entry["recommendation"] == "🔴 Nicht kaufen":
+                st.error(f"Aktueller Verkaufspreis liegt {entry['price_diff']:.1f}% über dem 30-Tage-Durchschnitt.")
+            else:
+                st.info(f"Preis liegt im Normbereich ({entry['price_diff']:+.1f}% gegenüber 30-Tage-Durchschnitt).")
 
 # --- TAB 2: FRAKTAL RENDITE ---
 with tab2:
