@@ -299,12 +299,276 @@ DAILY_COOLDOWN_USAGE = {
     ]
 }
 
+# --- REZEPTE FÜR DAILY COOLDOWN MATERIALIEN (Beispiele) ---
+# Diese zeigen mögliche Verwendungen und deren Profitabilität
+
+COOLDOWN_RECIPES = {
+    "Deldrimor Steel Ingot": [
+        {
+            "name": "Legende Rüstungkomponente",
+            "outputs": [
+                {"name": "Legendary Insight", "id": 77290, "qty": 1}
+            ],
+            "ingredients": [
+                {"name": "Deldrimor Steel Ingot", "id": 46738, "qty": 2},
+                {"name": "Ecto", "id": 19721, "qty": 10},
+                {"name": "Orichalcum Ore", "id": 19704, "qty": 20}
+            ]
+        },
+        {
+            "name": "Stahling-Zubehör",
+            "outputs": [
+                {"name": "Steel Accessory", "id": 75633, "qty": 1}
+            ],
+            "ingredients": [
+                {"name": "Deldrimor Steel Ingot", "id": 46738, "qty": 3},
+                {"name": "Silver Ore", "id": 19700, "qty": 15},
+                {"name": "Copper Ore", "id": 19699, "qty": 25}
+            ]
+        }
+    ],
+    "Elonian Leather Square": [
+        {
+            "name": "Legendäre Leder-Rüstung",
+            "outputs": [
+                {"name": "Legendary Insight", "id": 77290, "qty": 1}
+            ],
+            "ingredients": [
+                {"name": "Elonian Leather Square", "id": 46739, "qty": 2},
+                {"name": "Ecto", "id": 19721, "qty": 8},
+                {"name": "Thin Leather Section", "id": 19718, "qty": 30}
+            ]
+        },
+        {
+            "name": "Exotische Leder-Rüstung",
+            "outputs": [
+                {"name": "Exotic Leather Coat", "id": 75632, "qty": 1}
+            ],
+            "ingredients": [
+                {"name": "Elonian Leather Square", "id": 46739, "qty": 1},
+                {"name": "Thick Leather Section", "id": 19728, "qty": 20},
+                {"name": "Thin Leather Section", "id": 19718, "qty": 15}
+            ]
+        }
+    ],
+    "Bolt of Damask": [
+        {
+            "name": "Legendäre Stoff-Rüstung",
+            "outputs": [
+                {"name": "Legendary Insight", "id": 77290, "qty": 1}
+            ],
+            "ingredients": [
+                {"name": "Bolt of Damask", "id": 46741, "qty": 2},
+                {"name": "Ecto", "id": 19721, "qty": 8},
+                {"name": "Silk Scrap", "id": 19748, "qty": 40}
+            ]
+        },
+        {
+            "name": "Exotische Stoff-Rüstung",
+            "outputs": [
+                {"name": "Exotic Damask Coat", "id": 75631, "qty": 1}
+            ],
+            "ingredients": [
+                {"name": "Bolt of Damask", "id": 46741, "qty": 1},
+                {"name": "Wool Scrap", "id": 19739, "qty": 25},
+                {"name": "Silk Scrap", "id": 19748, "qty": 30}
+            ]
+        }
+    ],
+    "Spiritwood Plank": [
+        {
+            "name": "Legendäre Waffe",
+            "outputs": [
+                {"name": "Legendary Insight", "id": 77290, "qty": 1}
+            ],
+            "ingredients": [
+                {"name": "Spiritwood Plank", "id": 46736, "qty": 3},
+                {"name": "Ecto", "id": 19721, "qty": 10},
+                {"name": "Ancient Wood Log", "id": 19722, "qty": 40}
+            ]
+        },
+        {
+            "name": "Exotische Waffe",
+            "outputs": [
+                {"name": "Exotic Greatsword", "id": 75630, "qty": 1}
+            ],
+            "ingredients": [
+                {"name": "Spiritwood Plank", "id": 46736, "qty": 2},
+                {"name": "Seasoned Wood Log", "id": 19710, "qty": 35},
+                {"name": "Ancient Wood Log", "id": 19722, "qty": 25}
+            ]
+        }
+    ]
+}
+
+# --- FRAKTALE LOOT-TABELLE ---
+# Basierend auf GW2 Wiki: Typische Drops pro Fractal Encryption Key
+
+FRACTAL_LOOT_TABLE = {
+    "guaranteed": [
+        {"name": "Geistersplitter (Shards of Ectorium)", "id": None, "qty_min": 15, "qty_max": 25, "avg_qty": 20, "copper_value": None}
+    ],
+    "common_drops": [
+        {"name": "Fraktal-Relikt", "id": 74166, "drop_rate": 0.35, "avg_qty": 1},
+        {"name": "Flax Seed", "id": 8062, "drop_rate": 0.15, "avg_qty": 1},
+        {"name": "Pile of Flax Seeds", "id": 19729, "drop_rate": 0.15, "avg_qty": 1},
+        {"name": "Geistersplitter extra", "id": None, "drop_rate": 0.25, "avg_qty": 5}
+    ],
+    "materials": [
+        {"name": "Orichalcum Ore", "id": 19704, "drop_rate": 0.08, "avg_qty": 2},
+        {"name": "Mithril Ore", "id": 19684, "drop_rate": 0.08, "avg_qty": 2},
+        {"name": "Ancient Wood Log", "id": 19722, "drop_rate": 0.08, "avg_qty": 2},
+        {"name": "Thick Leather Section", "id": 19728, "drop_rate": 0.08, "avg_qty": 1}
+    ],
+    "rare": [
+        {"name": "Pristine Fractal Encryption", "id": 75921, "drop_rate": 0.02, "avg_qty": 1},
+        {"name": "Infusion Slot Unlock", "id": 77508, "drop_rate": 0.005, "avg_qty": 1}
+    ]
+}
+
 
 def get_item_average(item_id, days=30):
     if item_id is None:
         return None
     ma, _ = moving_average(item_id, days)
     return ma
+
+# --- PROFIT-ANALYSE FÜR REZEPTE ---
+def calculate_recipe_profit(recipe, fee_multiplier=0.85):
+    """
+    Berechnet den Gewinn für ein bestimmtes Rezept.
+    recipe = {"name": ..., "outputs": [...], "ingredients": [...]}
+    """
+    total_input_cost = 0
+    total_output_value = 0
+    
+    # Kosten der Zutaten
+    for ingredient in recipe["ingredients"]:
+        item_id = ingredient.get("id", 0)
+        price = get_price(item_id, "buys") or 0
+        total_input_cost += price * ingredient["qty"]
+    
+    # Wert der Outputs (Verkauf)
+    for output in recipe["outputs"]:
+        price = get_price(output.get("id", 0), "sells") or 0
+        total_output_value += price * output["qty"] * fee_multiplier
+    
+    profit = total_output_value - total_input_cost
+    return {
+        "name": recipe["name"],
+        "input_cost": total_input_cost,
+        "output_value": total_output_value,
+        "profit": profit,
+        "roi": ((profit / total_input_cost) * 100) if total_input_cost > 0 else 0
+    }
+
+def get_best_recipes(cooldown_material_name, top_n=3):
+    """
+    Gibt die besten Rezepte für ein Daily Cooldown Material zurück
+    """
+    recipes = COOLDOWN_RECIPES.get(cooldown_material_name, [])
+    if not recipes:
+        return []
+    
+    results = []
+    for recipe in recipes:
+        profit_data = calculate_recipe_profit(recipe)
+        results.append(profit_data)
+    
+    # Sortiere nach Profit
+    return sorted(results, key=lambda x: x["profit"], reverse=True)[:top_n]
+
+# --- FRACTAL LOOT ANALYSE ---
+def calculate_fractal_loot_value(num_keys=1, fee_multiplier=0.85):
+    """
+    Berechnet den erwarteten Wert des Loots aus Fractal Encryption Keys
+    unter Berücksichtigung aller Drops und Handelsplatzgebühren
+    """
+    results = {
+        "total_value": 0,
+        "items": [],
+        "by_category": {}
+    }
+    
+    # Guaranteed drops (Geistersplitter)
+    for item in FRACTAL_LOOT_TABLE["guaranteed"]:
+        avg_qty = item["avg_qty"]
+        # Geistersplitter haben keinen direkten TP-Preis, aber basieren auf Fraktale Relikte
+        # Durchschnittlich 1 Relikt ≈ 28-30 Geistersplitter wert
+        value_per_shard = 0  # Wird separat berechnet
+        total_value = 0
+        results["items"].append({
+            "name": item["name"],
+            "qty": int(avg_qty * num_keys),
+            "unit_value": "variable",
+            "total_value": total_value,
+            "type": "guaranteed"
+        })
+        results["by_category"]["guaranteed"] = results["by_category"].get("guaranteed", 0) + total_value
+    
+    # Common drops
+    for item in FRACTAL_LOOT_TABLE["common_drops"]:
+        if item.get("id"):
+            price = get_price(item["id"], "sells") or 0
+        else:
+            price = 0  # Geistersplitter - wird separat behandelt
+        
+        expected_qty = item["avg_qty"] * item["drop_rate"] * num_keys
+        total_value = expected_qty * price * fee_multiplier  # Mit Gebühren
+        
+        results["items"].append({
+            "name": item["name"],
+            "drop_rate": f"{item['drop_rate']*100:.0f}%",
+            "expected_qty": round(expected_qty, 2),
+            "unit_value": format_gw2_money(int(price)),
+            "total_value": total_value,
+            "type": "common"
+        })
+        results["by_category"]["common"] = results["by_category"].get("common", 0) + total_value
+    
+    # Materials
+    for item in FRACTAL_LOOT_TABLE["materials"]:
+        price = get_price(item["id"], "sells") or 0
+        expected_qty = item["avg_qty"] * item["drop_rate"] * num_keys
+        total_value = expected_qty * price * fee_multiplier
+        
+        results["items"].append({
+            "name": item["name"],
+            "drop_rate": f"{item['drop_rate']*100:.0f}%",
+            "expected_qty": round(expected_qty, 2),
+            "unit_value": format_gw2_money(int(price)),
+            "total_value": total_value,
+            "type": "material"
+        })
+        results["by_category"]["materials"] = results["by_category"].get("materials", 0) + total_value
+    
+    # Rare drops
+    for item in FRACTAL_LOOT_TABLE["rare"]:
+        price = get_price(item["id"], "sells") or 0
+        expected_qty = item["avg_qty"] * item["drop_rate"] * num_keys
+        total_value = expected_qty * price * fee_multiplier
+        
+        results["items"].append({
+            "name": item["name"],
+            "drop_rate": f"{item['drop_rate']*100:.2f}%",
+            "expected_qty": round(expected_qty, 3),
+            "unit_value": format_gw2_money(int(price)),
+            "total_value": total_value,
+            "type": "rare"
+        })
+        results["by_category"]["rare"] = results["by_category"].get("rare", 0) + total_value
+    
+    # Relikt-Wert berechnen (Fraktale Relikte als Shard-Äquivalent)
+    relic_qty = sum(item["expected_qty"] for item in results["items"] if item["name"] == "Fraktal-Relikt")
+    if relic_qty > 0:
+        # 1 Relikt = 28 Geistersplitter (konfigurierbar in Sidebar)
+        shards_equivalent = relic_qty * 28  # relic_per_shard kommt aus Sidebar
+        results["shard_equivalent"] = shards_equivalent
+    
+    # Gesamtwert
+    results["total_value"] = sum(results["by_category"].values())
+    
+    return results
 
 
 def ingredient_price_assessment(name, item_id, qty):
@@ -475,7 +739,13 @@ MF_MATERIAL_PARE = {
 ECTO_ID = 19721
 ENCRYPTION_ID = 75919
 
-ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + [ECTO_ID, ENCRYPTION_ID]
+# Fraktale-Items
+FRACTAL_RELIC_ID = 74166
+PRISTINE_ENCRYPTION_ID = 75921
+INFUSION_ID = 77508
+LEGENDARY_INSIGHT_ID = 77290
+
+ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + [ECTO_ID, ENCRYPTION_ID, FRACTAL_RELIC_ID, PRISTINE_ENCRYPTION_ID, INFUSION_ID, LEGENDARY_INSIGHT_ID]
 for p in MF_MATERIAL_PARE.values():
     ALL_IDS.extend([p["t5"], p["t6"]])
 ALL_IDS = list(set(ALL_IDS))
@@ -638,31 +908,167 @@ with tab1:
                 st.error(f"Aktueller Verkaufspreis liegt {entry['price_diff']:.1f}% über dem 30-Tage-Durchschnitt.")
             else:
                 st.info(f"Preis liegt im Normbereich ({entry['price_diff']:+.1f}% gegenüber 30-Tage-Durchschnitt).")
+            
+            # --- NEUE SEKTION: BESTE REZEPTE FÜR DIESES MATERIAL ---
+            st.divider()
+            st.markdown("### 🎯 Beste Rezepte für diesen Daily Cooldown")
+            best_recipes = get_best_recipes(entry["name"], top_n=3)
+            
+            if best_recipes:
+                recipe_data = []
+                for recipe in best_recipes:
+                    recipe_data.append({
+                        "Rezept": recipe["name"],
+                        "Eingabe-Kosten": format_gw2_money(int(recipe["input_cost"])),
+                        "Ausgabe-Wert": format_gw2_money(int(recipe["output_value"])),
+                        "Reingewinn": format_gw2_money(int(recipe["profit"])),
+                        "ROI": f"{recipe['roi']:+.1f}%"
+                    })
+                
+                st.dataframe(pd.DataFrame(recipe_data), use_container_width=True, hide_index=True)
+                
+                # Beste Rezept hervorheben
+                top_recipe = best_recipes[0]
+                if top_recipe["profit"] > 0:
+                    st.success(f"💰 **Beste Option:** {top_recipe['name']} mit **{format_gw2_money(int(top_recipe['profit']))}** Reingewinn (ROI: {top_recipe['roi']:.1f}%)")
+                else:
+                    st.warning(f"⚠️ **Kein profitables Rezept verfügbar.** Direktverkauf ist die beste Option.")
+            else:
+                st.info("Keine Rezepte für dieses Material verfügbar.")
 
 # --- TAB 2: FRAKTAL RENDITE ---
 with tab2:
-    st.header("📉 Fraktal-Verschlüsselungen")
-    col1, col2 = st.columns([1, 1])
+    st.header("📉 Fraktal-Verschlüsselungen & Loot-Analyse")
+    
+    col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
         enc_amount = st.number_input("Anzahl Verschlüsselungen", value=100, step=10)
         key_source = st.selectbox("Schlüssel-Einkauf", ["Tiefenrabatt (20 Silber)", "Rabattiert (30 Silber)", "Normalpreis (50 Silber)"])
-        
+    
     key_cost_unit = {"Tiefenrabatt (20 Silber)": 2000, "Rabattiert (30 Silber)": 3000, "Normalpreis (50 Silber)": 5000}[key_source]
     enc_sell_price = get_price(ENCRYPTION_ID, "sells")
     
-    avg_open_value = 4850
-    total_key_cost = enc_amount * key_cost_unit
-    total_sell_revenue = (enc_amount * enc_sell_price) * fee_multiplier
-    total_open_revenue = (enc_amount * avg_open_value) - total_key_cost
-
     with col2:
-        st.metric("Direktverkauf", format_gw2_money(total_sell_revenue))
-        st.metric("Wert bei Öffnung", format_gw2_money(total_open_revenue))
-
-    if total_open_revenue > total_sell_revenue and live_data:
-        st.success(f"🚀 **Öffnen lohnt sich!** Plus von {format_gw2_money(total_open_revenue - total_sell_revenue)}.")
-    elif live_data:
-        st.warning(f"⚖️ **Verkaufen!** Öffnen bringt {format_gw2_money(total_sell_revenue - total_open_revenue)} Verlust.")
+        st.subheader("Direktverkauf")
+        total_key_cost = enc_amount * key_cost_unit
+        total_sell_revenue = (enc_amount * enc_sell_price) * fee_multiplier
+        direct_profit = total_sell_revenue - total_key_cost
+        
+        st.metric("Eingabe", format_gw2_money(total_key_cost))
+        st.metric("Verkaufserlös", format_gw2_money(total_sell_revenue))
+        st.metric("Netto-Gewinn", format_gw2_money(int(direct_profit)))
+    
+    # --- DETAILLIERTE LOOT-ANALYSE ---
+    with col3:
+        st.subheader("Öffnen & Verkaufen")
+        loot_analysis = calculate_fractal_loot_value(enc_amount, fee_multiplier)
+        loot_value = loot_analysis["total_value"]
+        loot_profit = loot_value - total_key_cost
+        
+        st.metric("Loot-Wert", format_gw2_money(int(loot_value)))
+        st.metric("Netto-Gewinn", format_gw2_money(int(loot_profit)))
+    
+    st.divider()
+    
+    # --- EMPFEHLUNG ---
+    st.subheader("💡 Rentabilitätsanalyse")
+    col_a, col_b = st.columns([1, 1])
+    
+    with col_a:
+        if loot_profit > direct_profit:
+            difference = loot_profit - direct_profit
+            st.success(f"🚀 **ÖFFNEN LOHNT SICH!**\n\nDurch Öffnen der Keys verdient ihr **{format_gw2_money(int(difference))}** mehr als durch Direktverkauf.\n\n**ROI beim Öffnen:** {((loot_profit/total_key_cost)*100):.1f}%\n**ROI beim Verkauf:** {((direct_profit/total_key_cost)*100):.1f}%")
+        elif direct_profit > loot_profit:
+            difference = direct_profit - loot_profit
+            st.warning(f"⚖️ **DIREKT VERKAUFEN BESSER**\n\nDirektverkauf bringt **{format_gw2_money(int(difference))}** mehr Gewinn.\n\n**ROI beim Verkauf:** {((direct_profit/total_key_cost)*100):.1f}%\n**ROI beim Öffnen:** {((loot_profit/total_key_cost)*100):.1f}%")
+        else:
+            st.info("💭 **GLEICHWERTIG**\n\nBoth options yield similar profit margins.")
+    
+    with col_b:
+        if loot_profit > direct_profit:
+            savings_pct = ((loot_profit - direct_profit) / direct_profit * 100)
+            st.metric("Zusatz-Gewinn durch Öffnen", f"+{savings_pct:.1f}%")
+        else:
+            loss_pct = ((direct_profit - loot_profit) / loot_profit * 100)
+            st.metric("Potentieller Verlust durch Öffnen", f"-{loss_pct:.1f}%")
+    
+    st.divider()
+    
+    # --- DETAILLIERTE LOOT-TABELLE ---
+    st.subheader("📋 Detaillierte Loot-Berechnung")
+    
+    # Kategorisierte Anzeige
+    tab_loot_common, tab_loot_mat, tab_loot_rare, tab_loot_summary = st.tabs(
+        ["🎁 Häufige Drops", "⛏️ Materialien", "💎 Seltene Items", "📊 Zusammenfassung"]
+    )
+    
+    with tab_loot_common:
+        st.markdown("**Häufig vorkommende Loot-Items**")
+        common_items = [item for item in loot_analysis["items"] if item["type"] == "common"]
+        if common_items:
+            common_df = pd.DataFrame(common_items)[["name", "drop_rate", "expected_qty", "unit_value", "total_value"]]
+            common_df.columns = ["Item", "Drop-Rate", "Erwartete Menge", "Einheit", "Wert TP"]
+            st.dataframe(common_df, use_container_width=True, hide_index=True)
+            total_common = sum(item["total_value"] for item in common_items)
+            st.metric("Kategoriegewinn", format_gw2_money(int(total_common)))
+    
+    with tab_loot_mat:
+        st.markdown("**Handwerksmaterialien**")
+        mat_items = [item for item in loot_analysis["items"] if item["type"] == "material"]
+        if mat_items:
+            mat_df = pd.DataFrame(mat_items)[["name", "drop_rate", "expected_qty", "unit_value", "total_value"]]
+            mat_df.columns = ["Material", "Drop-Rate", "Erwartete Menge", "Einheit", "Wert TP"]
+            st.dataframe(mat_df, use_container_width=True, hide_index=True)
+            total_mat = sum(item["total_value"] for item in mat_items)
+            st.metric("Kategoriegewinn", format_gw2_money(int(total_mat)))
+    
+    with tab_loot_rare:
+        st.markdown("**Seltene & Wertvolle Items**")
+        rare_items = [item for item in loot_analysis["items"] if item["type"] == "rare"]
+        if rare_items:
+            rare_df = pd.DataFrame(rare_items)[["name", "drop_rate", "expected_qty", "unit_value", "total_value"]]
+            rare_df.columns = ["Item", "Drop-Rate", "Erwartete Menge", "Einheit", "Wert TP"]
+            st.dataframe(rare_df, use_container_width=True, hide_index=True)
+            total_rare = sum(item["total_value"] for item in rare_items)
+            st.metric("Kategoriegewinn", format_gw2_money(int(total_rare)))
+        else:
+            st.info("Keine seltenen Items in dieser Analyse.")
+    
+    with tab_loot_summary:
+        st.markdown("**Gewinn-Übersicht**")
+        summary_data = []
+        
+        for category, value in loot_analysis["by_category"].items():
+            if value > 0:
+                summary_data.append({
+                    "Kategorie": category.replace("_", " ").title(),
+                    "Wert": format_gw2_money(int(value)),
+                    "Anteil": f"{(value/loot_value*100):.1f}%" if loot_value > 0 else "0%"
+                })
+        
+        if summary_data:
+            st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
+        
+        st.divider()
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        with col_s1:
+            st.metric("Schlüssel-Kosten", format_gw2_money(int(total_key_cost)))
+        with col_s2:
+            st.metric("Loot-Wert (brutto)", format_gw2_money(int(loot_analysis["total_value"])))
+        with col_s3:
+            st.metric("Nach TP-Gebühren", format_gw2_money(int(loot_value)))
+        with col_s4:
+            st.metric("Reingewinn", format_gw2_money(int(loot_profit)))
+    
+    st.divider()
+    st.markdown("**ℹ️ Hinweise zur Analyse:**")
+    st.markdown("""
+    - **Drop-Raten** basieren auf GW2-Community-Daten und können variieren
+    - **Preise** stammen aus Live-API-Daten (alle 60 Sekunden aktualisiert)
+    - **Gebühren** beinhalten die 15% Handelsposten-Verkaufsgebühr
+    - **Geistersplitter** werden über Fraktal-Relikte berechnet (1 Relikt ≈ 28 Shards)
+    - Die Analyse geht von optimalem Loot-Verkauf aus (alle Items auf TP)
+    """)
 
 # --- TAB 3: MYSTIC FORGE ---
 with tab3:
