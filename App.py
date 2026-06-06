@@ -479,95 +479,97 @@ def get_best_recipes(cooldown_material_name, top_n=3):
     return sorted(results, key=lambda x: x["profit"], reverse=True)[:top_n]
 
 # --- FRACTAL LOOT ANALYSE ---
-def calculate_fractal_loot_value(num_keys=1, fee_multiplier=0.85):
+def calculate_fractal_loot_value(num_keys=1, fee_multiplier=0.85, relic_per_shard=28):
     """
     Berechnet den erwarteten Wert des Loots aus Fractal Encryption Keys
-    unter Berücksichtigung aller Drops und Handelsplatzgebühren
+    unter Berücksichtigung aller Drops und Handelsplatzgebühren.
+    - Konvertiert Fraktal-Relikte in Geistersplitter-Wert über `relic_per_shard`.
+    - Behandelt Items ohne ID (z.B. Shards) separat.
     """
     results = {
         "total_value": 0,
         "items": [],
         "by_category": {}
     }
-    
+
+    # Bestimme Relikt-/Shard-Wert (Fallbacks auf buys wenn sells fehlt)
+    relic_price = get_price(FRACTAL_RELIC_ID, "sells") or get_price(FRACTAL_RELIC_ID, "buys") or 0
+    shard_value = (relic_price / relic_per_shard * fee_multiplier) if relic_price > 0 else 0
+
     # Guaranteed drops (Geistersplitter)
     for item in FRACTAL_LOOT_TABLE["guaranteed"]:
-        avg_qty = item["avg_qty"]
-        # Geistersplitter haben keinen direkten TP-Preis, aber basieren auf Fraktale Relikte
-        # Durchschnittlich 1 Relikt ≈ 28-30 Geistersplitter wert
-        value_per_shard = 0  # Wird separat berechnet
-        total_value = 0
+        avg_qty = item.get("avg_qty", 0)
+        total_shards = avg_qty * num_keys
+        total_value = total_shards * shard_value
         results["items"].append({
             "name": item["name"],
-            "qty": int(avg_qty * num_keys),
-            "unit_value": "variable",
+            "qty": int(total_shards),
+            "unit_value": format_gw2_money(int(shard_value)) if shard_value else "N/A",
             "total_value": total_value,
             "type": "guaranteed"
         })
         results["by_category"]["guaranteed"] = results["by_category"].get("guaranteed", 0) + total_value
-    
+
     # Common drops
-    for item in FRACTAL_LOOT_TABLE["common_drops"]:
+    for item in FRACTAL_LOOT_TABLE.get("common_drops", []):
         if item.get("id"):
-            price = get_price(item["id"], "sells") or 0
+            price = get_price(item["id"], "sells") or get_price(item["id"], "buys") or 0
+            unit_value = format_gw2_money(int(price))
+            expected_qty = item.get("avg_qty", 0) * item.get("drop_rate", 0) * num_keys
+            total_value = expected_qty * price * fee_multiplier
         else:
-            price = 0  # Geistersplitter - wird separat behandelt
-        
-        expected_qty = item["avg_qty"] * item["drop_rate"] * num_keys
-        total_value = expected_qty * price * fee_multiplier  # Mit Gebühren
-        
+            # Items without ID considered as extra shards
+            price = shard_value
+            unit_value = format_gw2_money(int(shard_value)) if shard_value else "N/A"
+            expected_qty = item.get("avg_qty", 0) * item.get("drop_rate", 0) * num_keys
+            total_value = expected_qty * shard_value
+
         results["items"].append({
             "name": item["name"],
-            "drop_rate": f"{item['drop_rate']*100:.0f}%",
+            "drop_rate": f"{item.get('drop_rate',0)*100:.0f}%",
             "expected_qty": round(expected_qty, 2),
-            "unit_value": format_gw2_money(int(price)),
+            "unit_value": unit_value,
             "total_value": total_value,
             "type": "common"
         })
         results["by_category"]["common"] = results["by_category"].get("common", 0) + total_value
-    
+
     # Materials
-    for item in FRACTAL_LOOT_TABLE["materials"]:
-        price = get_price(item["id"], "sells") or 0
-        expected_qty = item["avg_qty"] * item["drop_rate"] * num_keys
+    for item in FRACTAL_LOOT_TABLE.get("materials", []):
+        price = get_price(item["id"], "sells") or get_price(item["id"], "buys") or 0
+        expected_qty = item.get("avg_qty", 0) * item.get("drop_rate", 0) * num_keys
         total_value = expected_qty * price * fee_multiplier
-        
+
         results["items"].append({
             "name": item["name"],
-            "drop_rate": f"{item['drop_rate']*100:.0f}%",
+            "drop_rate": f"{item.get('drop_rate',0)*100:.0f}%",
             "expected_qty": round(expected_qty, 2),
             "unit_value": format_gw2_money(int(price)),
             "total_value": total_value,
             "type": "material"
         })
         results["by_category"]["materials"] = results["by_category"].get("materials", 0) + total_value
-    
+
     # Rare drops
-    for item in FRACTAL_LOOT_TABLE["rare"]:
-        price = get_price(item["id"], "sells") or 0
-        expected_qty = item["avg_qty"] * item["drop_rate"] * num_keys
+    for item in FRACTAL_LOOT_TABLE.get("rare", []):
+        price = get_price(item["id"], "sells") or get_price(item["id"], "buys") or 0
+        expected_qty = item.get("avg_qty", 0) * item.get("drop_rate", 0) * num_keys
         total_value = expected_qty * price * fee_multiplier
-        
+
         results["items"].append({
             "name": item["name"],
-            "drop_rate": f"{item['drop_rate']*100:.2f}%",
+            "drop_rate": f"{item.get('drop_rate',0)*100:.2f}%",
             "expected_qty": round(expected_qty, 3),
             "unit_value": format_gw2_money(int(price)),
             "total_value": total_value,
             "type": "rare"
         })
         results["by_category"]["rare"] = results["by_category"].get("rare", 0) + total_value
-    
-    # Relikt-Wert berechnen (Fraktale Relikte als Shard-Äquivalent)
-    relic_qty = sum(item["expected_qty"] for item in results["items"] if item["name"] == "Fraktal-Relikt")
-    if relic_qty > 0:
-        # 1 Relikt = 28 Geistersplitter (konfigurierbar in Sidebar)
-        shards_equivalent = relic_qty * 28  # relic_per_shard kommt aus Sidebar
-        results["shard_equivalent"] = shards_equivalent
-    
+
     # Gesamtwert
     results["total_value"] = sum(results["by_category"].values())
-    
+    results["shard_value"] = shard_value
+    results["relic_price"] = relic_price
     return results
 
 
@@ -707,6 +709,13 @@ COOLDOWN_IDS = {
     "Spiritwood Plank": 46736
 }
 
+# Mapping: Ascended Material -> Daily Cooldown Item
+ASCENDED_TO_COOLDOWN = {
+    "Lump of Mithrillium": "Deldrimor Steel Ingot",
+    "Glob of Elder Spirit Residue": "Spiritwood Plank",
+    "Spool of Thick Elonian Cord": "Elonian Leather Square",
+    "Spool of Silk Weaving Thread": "Bolt of Damask"
+}
 RAW_MAT_IDS = {
     "Mithril Ore": 19684,
     "Iron Ore": 19697,
@@ -808,90 +817,24 @@ tab1, tab2, tab3, tab4 = st.tabs(["🕒 Daily Cooldowns", "📉 Fraktale", "🔮
 def get_price(item_id, mode="buys"):
     return live_data.get(item_id, {}).get(mode, {}).get("unit_price", 0)
 
-# --- TAB 1: DAILY COOLDOWN PLANER ---
+# --- TAB 1: DAILY COOLDOWN PLANER (Ascended Material View) ---
 with tab1:
-    st.header("🕒 Tägliche Veredelung")
-    cooldown_results = []
-    detailed_results = []
+    st.header("🕒 Ascended-Materialien & Daily Cooldowns")
+    st.markdown("Zeigt für jedes ascended Material die benötigten Komponenten, Kaufempfehlungen und mögliche Weiterverarbeitung.")
 
-    for name, item_id in COOLDOWN_IDS.items():
-        sell_price = get_price(item_id, "sells")
-        recipe = DAILY_COOLDOWN_RECIPES.get(name, [])
-        ingredient_rows = [ingredient_price_assessment(i["name"], i.get("id"), i["qty"]) for i in recipe]
+    for asc_name, cooldown_name in ASCENDED_TO_COOLDOWN.items():
+        st.markdown("---")
+        with st.expander(f"{asc_name} → {cooldown_name}", expanded=False):
+            st.markdown(f"**Cooldown-Item:** {cooldown_name}")
 
-        if name == "Deldrimor Steel Ingot":
-            craft_cost = (get_price(19684) * 50) + (get_price(19697) * 90) + (get_price(19702) * 40) + 1135
-        elif name == "Elonian Leather Square":
-            craft_cost = (get_price(19728) * 50) + (get_price(19718) * 40) + (get_price(19719) * 20) + (get_price(19725) * 40) + 15
-        elif name == "Bolt of Damask":
-            craft_cost = (get_price(19748) * 100) + (get_price(19739) * 40) + (get_price(19741) * 20) + (get_price(19743) * 40) + 15
-        else:  # Spiritwood Plank
-            craft_cost = (get_price(19722) * 50) + (get_price(19710) * 40) + (get_price(19709) * 30) + (get_price(19713) * 60) + 15
-
-        history_values = [d["sell"] for d in price_history.get(str(item_id), {}).get("data", [])]
-        moving_avg, price_vals = moving_average(item_id, 30)
-        historical_values = price_vals if price_vals else history_values
-
-        # Fallback: wenn aktueller Live-Preis fehlt, verwende den letzten historischen Verkaufspreis
-        if sell_price <= 0 and history_values:
-            sell_price = history_values[-1]
-
-        revenue = sell_price * fee_multiplier
-        profit = revenue - craft_cost if (live_data or history_values) else 0
-
-        avg_historic = sum(history_values) / len(history_values) if history_values else craft_cost
-        price_diff = ((sell_price - avg_historic) / avg_historic * 100) if avg_historic else 0
-
-        if not (live_data or history_values):
-            rec = "⚠️ API Fehler"
-        elif use_ai_daily:
-            assessment = get_ai_assessment(
-                name,
-                historical_values,
-                sell_price,
-                moving_avg,
-                use_ai=True
-            )
-            rec = assessment["assessment"]
-        elif price_diff <= -10:
-            rec = "🟢 Kaufempfehlung"
-        elif price_diff >= 10:
-            rec = "🔴 Nicht kaufen"
-        else:
-            rec = "🟡 Abwarten"
-
-        cooldown_results.append({
-            "Gegenstand": name,
-            "VK-Preis": format_gw2_money(sell_price),
-            "Herstellkosten": format_gw2_money(craft_cost),
-            "Reingewinn": format_gw2_money(profit),
-            "Empfehlung": rec,
-            "Preis vs Ø": f"{price_diff:+.1f}%"
-        })
-
-        detailed_results.append({
-            "name": name,
-            "item_id": item_id,
-            "sell_price": sell_price,
-            "craft_cost": craft_cost,
-            "profit": profit,
-            "recommendation": rec,
-            "price_diff": price_diff,
-            "ingredient_rows": ingredient_rows,
-            "use_cases": DAILY_COOLDOWN_USAGE.get(name, [])
-        })
-
-    df_cooldowns = pd.DataFrame(cooldown_results).sort_values(by="Reingewinn", ascending=False)
-    st.markdown("### Übersicht: Daily Cooldowns nach aktuellem Gewinn")
-    st.dataframe(df_cooldowns[["Gegenstand", "VK-Preis", "Herstellkosten", "Reingewinn", "Empfehlung", "Preis vs Ø"]], use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-    st.markdown("### Detaillierte Zutatenanalyse und Verwendung")
-    for entry in detailed_results:
-        with st.expander(f"{entry['name']} — Reingewinn {format_gw2_money(entry['profit'])} | Empfehlung: {entry['recommendation']}"):
-            st.markdown(f"**Aktueller Verkaufspreis:** {format_gw2_money(entry['sell_price'])} — **Herstellkosten:** {format_gw2_money(entry['craft_cost'])} — **Preis vs. 30d Ø:** {entry['price_diff']:+.1f}%")
-            st.markdown("**Zutaten & Kaufempfehlungen:**")
-            st.dataframe(pd.DataFrame(entry["ingredient_rows"]).rename(columns={
+            # Zutaten für das Herstellen des Cooldowns
+            recipe = DAILY_COOLDOWN_RECIPES.get(cooldown_name, [])
+            st.markdown("**Benötigte Items für den Cooldown:**")
+            ing_rows = []
+            for ing in recipe:
+                row = ingredient_price_assessment(ing["name"], ing.get("id"), ing["qty"])
+                ing_rows.append(row)
+            df_ing = pd.DataFrame(ing_rows).rename(columns={
                 "Ingredient": "Zutat",
                 "Quantity": "Menge",
                 "Current": "Aktueller Preis",
@@ -899,42 +842,64 @@ with tab1:
                 "Diff": "Abweichung",
                 "Recommendation": "Empfehlung",
                 "Reason": "Begründung"
-            }), use_container_width=True, hide_index=True)
-            st.markdown("**Mögliche Verwendung:** " + ", ".join(entry["use_cases"]))
-            st.markdown("**Warum diese Einschätzung?**")
-            if entry["recommendation"] == "🟢 Kaufempfehlung":
-                st.success(f"Aktueller Verkaufspreis liegt {abs(entry['price_diff']):.1f}% unter dem 30-Tage-Durchschnitt.")
-            elif entry["recommendation"] == "🔴 Nicht kaufen":
-                st.error(f"Aktueller Verkaufspreis liegt {entry['price_diff']:.1f}% über dem 30-Tage-Durchschnitt.")
-            else:
-                st.info(f"Preis liegt im Normbereich ({entry['price_diff']:+.1f}% gegenüber 30-Tage-Durchschnitt).")
-            
-            # --- NEUE SEKTION: BESTE REZEPTE FÜR DIESES MATERIAL ---
-            st.divider()
-            st.markdown("### 🎯 Beste Rezepte für diesen Daily Cooldown")
-            best_recipes = get_best_recipes(entry["name"], top_n=3)
-            
-            if best_recipes:
-                recipe_data = []
-                for recipe in best_recipes:
-                    recipe_data.append({
-                        "Rezept": recipe["name"],
-                        "Eingabe-Kosten": format_gw2_money(int(recipe["input_cost"])),
-                        "Ausgabe-Wert": format_gw2_money(int(recipe["output_value"])),
-                        "Reingewinn": format_gw2_money(int(recipe["profit"])),
-                        "ROI": f"{recipe['roi']:+.1f}%"
-                    })
-                
-                st.dataframe(pd.DataFrame(recipe_data), use_container_width=True, hide_index=True)
-                
-                # Beste Rezept hervorheben
-                top_recipe = best_recipes[0]
-                if top_recipe["profit"] > 0:
-                    st.success(f"💰 **Beste Option:** {top_recipe['name']} mit **{format_gw2_money(int(top_recipe['profit']))}** Reingewinn (ROI: {top_recipe['roi']:.1f}%)")
+            })
+            st.dataframe(df_ing, use_container_width=True, hide_index=True)
+
+            # Herstellkosten und Verkauf des Cooldowns
+            cooldown_id = COOLDOWN_IDS.get(cooldown_name)
+            sell_price = get_price(cooldown_id, "sells")
+            # Berechne Herstellkosten aus recipe (falls vorhanden)
+            craft_cost = 0
+            for ing in recipe:
+                if ing.get("id"):
+                    unit = get_price(ing.get("id"), "buys") or get_price(ing.get("id"), "sells") or 0
+                    craft_cost += unit * ing.get("qty", 0)
                 else:
-                    st.warning(f"⚠️ **Kein profitables Rezept verfügbar.** Direktverkauf ist die beste Option.")
+                    # feste Gebühr
+                    craft_cost += ing.get("qty", 0)
+
+            revenue = sell_price * fee_multiplier
+            profit = revenue - craft_cost
+
+            st.markdown(f"**Herstellkosten:** {format_gw2_money(int(craft_cost))}  —  **Verkauf (nach Gebühren):** {format_gw2_money(int(revenue))}")
+            if profit > 0:
+                st.success(f"💰 Direkter Verkauf des Cooldowns lohnt: Reingewinn {format_gw2_money(int(profit))}")
             else:
-                st.info("Keine Rezepte für dieses Material verfügbar.")
+                st.warning(f"⚠️ Direkter Verkauf des Cooldowns bringt {format_gw2_money(int(profit))} (Verlust).")
+
+            # Begründung / Empfehlung für Vorratskäufe der Zutaten
+            st.markdown("**Kaufempfehlungen für Zutaten (Vorrat):**")
+            for _, r in df_ing.iterrows():
+                st.write(f"- **{r['Zutat']}**: {r['Empfehlung']} — {r['Begründung']}")
+
+            # Welche Items kann man mit dem Cooldown herstellen (höherwertige Rezepte)?
+            st.divider()
+            st.markdown("**Mögliche Weiterverarbeitung / Rezepte mit diesem Cooldown:**")
+            cooldown_recipes = COOLDOWN_RECIPES.get(cooldown_name, [])
+            if cooldown_recipes:
+                out_rows = []
+                for r in cooldown_recipes:
+                    profit_data = calculate_recipe_profit(r, fee_multiplier=fee_multiplier)
+                    # Kaufempfehlungen für zusätzliche Komponenten (außer dem Cooldown)
+                    add_comps = []
+                    for ing in r.get("ingredients", []):
+                        if ing.get("name") == cooldown_name or ing.get("id") is None:
+                            continue
+                        comp_assess = ingredient_price_assessment(ing["name"], ing.get("id"), ing.get("qty"))
+                        add_comps.append((ing["name"], comp_assess["Recommendation"], comp_assess["Reason"]))
+
+                    out_rows.append({
+                        "Rezept": r["name"],
+                        "Eingabe-Kosten": format_gw2_money(int(profit_data["input_cost"])),
+                        "Ausgabe-Wert": format_gw2_money(int(profit_data["output_value"])),
+                        "Reingewinn": format_gw2_money(int(profit_data["profit"])),
+                        "ROI": f"{profit_data['roi']:+.1f}%",
+                        "Komponenten-Empfehlungen": ", ".join([f"{c[0]}: {c[1]} ({c[2]})" for c in add_comps])
+                    })
+
+                st.dataframe(pd.DataFrame(out_rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("Keine Weiterverarbeitungsrezepte für dieses Item hinterlegt.")
 
 # --- TAB 2: FRAKTAL RENDITE ---
 with tab2:
@@ -961,7 +926,7 @@ with tab2:
     # --- DETAILLIERTE LOOT-ANALYSE ---
     with col3:
         st.subheader("Öffnen & Verkaufen")
-        loot_analysis = calculate_fractal_loot_value(enc_amount, fee_multiplier)
+        loot_analysis = calculate_fractal_loot_value(enc_amount, fee_multiplier, relic_per_shard)
         loot_value = loot_analysis["total_value"]
         loot_profit = loot_value - total_key_cost
         
