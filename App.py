@@ -479,7 +479,7 @@ def get_best_recipes(cooldown_material_name, top_n=3):
     return sorted(results, key=lambda x: x["profit"], reverse=True)[:top_n]
 
 # --- FRACTAL LOOT ANALYSE ---
-def calculate_fractal_loot_value(num_keys=1, fee_multiplier=0.85, relic_per_shard=28):
+def calculate_fractal_loot_value(num_keys=1, fee_multiplier=0.85, relic_per_shard=28, shard_unit_price=0):
     """
     Berechnet den erwarteten Wert des Loots aus Fractal Encryption Keys
     unter Berücksichtigung aller Drops und Handelsplatzgebühren.
@@ -492,9 +492,12 @@ def calculate_fractal_loot_value(num_keys=1, fee_multiplier=0.85, relic_per_shar
         "by_category": {}
     }
 
-    # Bestimme Relikt-/Shard-Wert (Fallbacks auf buys wenn sells fehlt)
+    # Bestimme Relikt-/Shard-Wert
     relic_price = get_price(FRACTAL_RELIC_ID, "sells") or get_price(FRACTAL_RELIC_ID, "buys") or 0
-    shard_value = (relic_price / relic_per_shard * fee_multiplier) if relic_price > 0 else 0
+    if shard_unit_price and shard_unit_price > 0:
+        shard_value = shard_unit_price * fee_multiplier
+    else:
+        shard_value = (relic_price / relic_per_shard * fee_multiplier) if relic_price > 0 else 0
 
     # Guaranteed drops (Geistersplitter)
     for item in FRACTAL_LOOT_TABLE["guaranteed"]:
@@ -757,6 +760,24 @@ LEGENDARY_INSIGHT_ID = 77290
 ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + [ECTO_ID, ENCRYPTION_ID, FRACTAL_RELIC_ID, PRISTINE_ENCRYPTION_ID, INFUSION_ID, LEGENDARY_INSIGHT_ID]
 for p in MF_MATERIAL_PARE.values():
     ALL_IDS.extend([p["t5"], p["t6"]])
+# Ergänze alle IDs aus der Fractal Loot Tabelle (falls vorhanden), damit wir Preise für diese Items laden
+for cat in FRACTAL_LOOT_TABLE.values():
+    for entry in cat:
+        if entry.get("id"):
+            ALL_IDS.append(entry["id"])
+
+ALL_IDS = list(set(ALL_IDS))
+
+# Ergänze IDs aus COOLDOWN_RECIPES (Outputs und Zutaten)
+for recipes in COOLDOWN_RECIPES.values():
+    for r in recipes:
+        for ing in r.get("ingredients", []):
+            if ing.get("id"):
+                ALL_IDS.append(ing.get("id"))
+        for out in r.get("outputs", []):
+            if out.get("id"):
+                ALL_IDS.append(out.get("id"))
+
 ALL_IDS = list(set(ALL_IDS))
 
 # --- APP-OBERFLÄCHE START ---
@@ -784,6 +805,7 @@ with st.sidebar:
     fee_multiplier = 0.85 if tp_fee_toggle else 1.0
     st.subheader("💎 Geistersplitter-Wertung")
     relic_per_shard = st.number_input("Fraktal-Relikte pro Geistersplitter", value=28)
+    shard_unit_price = st.number_input("Geistersplitter-Wert pro Stück (Kupfer, 0 = auto)", value=0)
     st.divider()
     use_ai_daily = st.checkbox(
         "KI für Daily Cooldown-Bewertung nutzen",
@@ -926,12 +948,16 @@ with tab2:
     # --- DETAILLIERTE LOOT-ANALYSE ---
     with col3:
         st.subheader("Öffnen & Verkaufen")
-        loot_analysis = calculate_fractal_loot_value(enc_amount, fee_multiplier, relic_per_shard)
+        loot_analysis = calculate_fractal_loot_value(enc_amount, fee_multiplier, relic_per_shard, shard_unit_price)
         loot_value = loot_analysis["total_value"]
         loot_profit = loot_value - total_key_cost
         
         st.metric("Loot-Wert", format_gw2_money(int(loot_value)))
         st.metric("Netto-Gewinn", format_gw2_money(int(loot_profit)))
+        
+        # Falls Shard-Wert nicht bestimmt werden konnte, Hinweis anzeigen
+        if loot_analysis.get("shard_value", 0) == 0:
+            st.warning("Geistersplitter-Wert konnte nicht aus Reliktpreis abgeleitet werden. Setze 'Geistersplitter-Wert pro Stück' in den Einstellungen oder überprüfe Relikt-ID.")
     
     st.divider()
     
