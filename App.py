@@ -743,6 +743,22 @@ def analyze_user_table(rows, num_keys=1, fee_multiplier=0.85):
     return {'items': results, 'total_value': total_expected, 'debug': dbg}
 
 
+def calculate_key_cost(num_keys):
+    tier1 = min(num_keys, 30)
+    tier2 = min(max(num_keys - 30, 0), 30)
+    tier3 = max(num_keys - 60, 0)
+
+    cost_20s = tier1 * 2000
+    cost_25s4c = tier2 * 2504
+    cost_30s = tier3 * 3000
+
+    return cost_20s + cost_25s4c + cost_30s, {
+        '20s (1-30)': cost_20s,
+        '25s 4c (31-60)': cost_25s4c,
+        '30s (61+)': cost_30s
+    }
+
+
 def ingredient_price_assessment(name, item_id, qty):
     if item_id is None or name == "Händlergebühr":
         return {
@@ -1103,41 +1119,39 @@ with tab2:
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        enc_amount = st.number_input("Anzahl Verschlüsselungen", value=100, step=10)
-        key_source = st.selectbox("Schlüssel-Einkauf", ["Tiefenrabatt (20 Silber)", "Rabattiert (30 Silber)", "Normalpreis (50 Silber)"])
-    
-    key_cost_unit = {"Tiefenrabatt (20 Silber)": 2000, "Rabattiert (30 Silber)": 3000, "Normalpreis (50 Silber)": 5000}[key_source]
-    enc_sell_price = get_price(ENCRYPTION_ID, "sells")
-    
-    with col2:
-        st.subheader("Direktverkauf")
-        total_key_cost = enc_amount * key_cost_unit
-        total_sell_revenue = (enc_amount * enc_sell_price) * fee_multiplier
-        direct_profit = total_sell_revenue - total_key_cost
-        
-        st.metric("Eingabe", format_gw2_money(total_key_cost))
-        st.metric("Verkaufserlös", format_gw2_money(total_sell_revenue))
-        st.metric("Netto-Gewinn", format_gw2_money(int(direct_profit)))
-    
-    # --- DETAILLIERTE LOOT-ANALYSE ---
-    with col3:
-        st.subheader("Öffnen & Verkaufen")
-        loot_analysis = calculate_fractal_loot_value(enc_amount, fee_multiplier, relic_per_shard, shard_unit_price)
-        loot_value = loot_analysis["total_value"]
-        loot_profit = loot_value - total_key_cost
-        
-        st.metric("Loot-Wert", format_gw2_money(int(loot_value)))
-        st.metric("Netto-Gewinn", format_gw2_money(int(loot_profit)))
-        
-        # Falls Shard-Wert nicht bestimmt werden konnte, Hinweis anzeigen
-        if loot_analysis.get("shard_value", 0) == 0:
-            st.warning("Geistersplitter-Wert konnte nicht aus Reliktpreis abgeleitet werden. Setze 'Geistersplitter-Wert pro Stück' in den Einstellungen oder überprüfe Relikt-ID.")
+        enc_amount = st.number_input("Anzahl Verschlüsselungen (zu öffnen)", value=100, step=10, min_value=1)
+        free_keys = st.number_input("Kostenlose Fractal Encryption Keys (Eigenbestand)", value=0, min_value=0, step=1)
 
-    # --- Fixe Drop-Tabelle aus Nutzer-CSV ---
+    total_key_cost, key_cost_breakdown = calculate_key_cost(enc_amount)
+    enc_sell_price = get_price(ENCRYPTION_ID, "sells")
+    enc_buy_price = get_price(ENCRYPTION_ID, "buys") or enc_sell_price
+    user_analysis = analyze_user_table(FIXED_FRACTAL_DROPS, num_keys=enc_amount, fee_multiplier=fee_multiplier)
+    expected_loot_value = user_analysis['total_value']
+    expected_loot_per_key = expected_loot_value / enc_amount if enc_amount > 0 else 0
+    direct_sell_value = (enc_amount * enc_sell_price) * fee_multiplier
+    open_profit = expected_loot_value - total_key_cost
+    direct_profit = direct_sell_value - total_key_cost
+
+    with col2:
+        st.subheader("Schlüssel-Kosten & Verkauf")
+        st.metric("Gesamtkosten für Keys", format_gw2_money(int(total_key_cost)))
+        st.write(f"- 20s (1-30 Keys): {format_gw2_money(int(key_cost_breakdown['20s (1-30)']))}")
+        st.write(f"- 25s 4c (31-60 Keys): {format_gw2_money(int(key_cost_breakdown['25s 4c (31-60)']))}")
+        st.write(f"- 30s (61+ Keys): {format_gw2_money(int(key_cost_breakdown['30s (61+)']))}")
+        st.metric("Aktuelle TP-Verkaufsrate für Verschlüsselungen", format_gw2_money(int(enc_sell_price)))
+        st.metric("Erlös bei Direktverkauf", format_gw2_money(int(direct_sell_value)))
+        st.metric("Netto-Gewinn beim Verkauf", format_gw2_money(int(direct_profit)))
+
+    with col3:
+        st.subheader("Öffnen mit fixer Drop-Tabelle")
+        st.metric("Erwarteter Loot-Wert gesamt", format_gw2_money(int(expected_loot_value)))
+        st.metric("Erwarteter Wert pro Öffnung", format_gw2_money(int(expected_loot_per_key)))
+        st.metric("Gewinn beim Öffnen", format_gw2_money(int(open_profit)))
+        if expected_loot_per_key == 0:
+            st.warning("Die Analyse konnte keinen erwarteten Loot-Wert pro Öffnung bestimmen. Bitte prüfe die Tabelle oder API-Daten.")
+
     with st.expander("📥 Fixe Drop-Tabelle (CSV, unveränderlich)", expanded=True):
         st.text_area("Fixe Drop-Tabelle", value=FIXED_FRACTAL_TABLE_CSV, height=260, disabled=True)
-
-    user_analysis = analyze_user_table(FIXED_FRACTAL_DROPS, num_keys=enc_amount, fee_multiplier=fee_multiplier)
 
     st.subheader("🔎 Analyse der fixen Drop-Tabelle")
     df_rows = []
@@ -1146,118 +1160,63 @@ with tab2:
             'Item': it['name'],
             'API ID': it['api_id'],
             'Drop-Rate': it['drop_rate'],
-            'Erw. Menge (gesamt)': round(it['expected_qty'],3),
+            'Erw. Menge (gesamt)': round(it['expected_qty'], 3),
             'TP-Wert (nach Geb.)': format_gw2_money(int(it['tp_value'])),
-            'Sofort-Verkauf (Vendor)': format_gw2_money(int(it['vendor_value'])) if it['vendor_value']>0 else '-',
+            'Sofort-Verkauf (Vendor)': format_gw2_money(int(it['vendor_value'])) if it['vendor_value'] > 0 else '-',
             'Empfehlung': it['recommendation'] or '-',
             'Begründung': it['reason'] or '-'
         })
 
     st.dataframe(pd.DataFrame(df_rows), use_container_width=True, hide_index=True)
-    st.markdown(f"**Erwarteter Gesamtwert (alle Keys)**: {format_gw2_money(int(user_analysis['total_value']))}")
+    st.markdown(f"**Erwarteter Gesamtwert für {enc_amount} geöffnete Verschlüsselungen:** {format_gw2_money(int(expected_loot_value))}")
+    st.markdown(f"**Durchschnittlicher erwarteter Wert pro Öffnung:** {format_gw2_money(int(expected_loot_per_key))}")
 
-    expected_loot_value = user_analysis['total_value']
-    direct_sell_value = (enc_amount * enc_sell_price) * fee_multiplier
     st.markdown("**Vergleich mit aktuellem Key-Verkauf**")
     st.write(f"- Erwarteter Loot-Wert (laut fixer Tabelle): {format_gw2_money(int(expected_loot_value))}")
     st.write(f"- Direktverkauf aller Keys (TP): {format_gw2_money(int(direct_sell_value))}")
     if expected_loot_value > direct_sell_value:
-        st.success(f"Öffnen könnte besser sein (+{format_gw2_money(int(expected_loot_value-direct_sell_value))})")
+        st.success(f"Öffnen könnte besser sein (+{format_gw2_money(int(expected_loot_value - direct_sell_value))})")
     else:
-        st.warning(f"Direktverkauf besser (+{format_gw2_money(int(direct_sell_value-expected_loot_value))})")
-    
+        st.warning(f"Direktverkauf besser (+{format_gw2_money(int(direct_sell_value - expected_loot_value))})")
+
+    if free_keys > 0:
+        st.divider()
+        st.subheader("🆓 Szenario: Kostenlose Fractal Encryption Keys")
+        buy_price = enc_buy_price
+        st.write(f"Aktueller TP-Kaufpreis für Verschlüsselungen: {format_gw2_money(int(buy_price))}")
+        st.write(f"Maximal rentabler Einkaufspreis pro Verschlüsselung: {format_gw2_money(int(expected_loot_per_key))}")
+        free_profit = (expected_loot_per_key - buy_price) * free_keys
+        if buy_price and free_profit > 0:
+            st.success(f"Empfehlung: Kaufen und öffnen, wenn der TP-Kaufpreis unter dem erwarteten Loot-Wert liegt.\nPotentieller Gewinn mit {free_keys} kostenlosen Keys: {format_gw2_money(int(free_profit))}.")
+        elif buy_price and free_profit <= 0:
+            st.warning(f"Empfehlung: Nicht kaufen. Der aktuelle TP-Kaufpreis ist höher als der erwartete Loot-Wert.\nWarte auf günstigere Encryption-Preise oder verkaufe die Keys direkt in späteren Situationen.")
+        else:
+            st.info("Aktueller TP-Kaufpreis für Verschlüsselungen ist nicht verfügbar. Bitte prüfen Sie die API oder schließen Sie den Streamlit-Neustart nicht aus.")
+
     st.divider()
-    
-    # --- EMPFEHLUNG ---
     st.subheader("💡 Rentabilitätsanalyse")
     col_a, col_b = st.columns([1, 1])
-    
+
     with col_a:
-        if loot_profit > direct_profit:
-            difference = loot_profit - direct_profit
-            st.success(f"🚀 **ÖFFNEN LOHNT SICH!**\n\nDurch Öffnen der Keys verdient ihr **{format_gw2_money(int(difference))}** mehr als durch Direktverkauf.\n\n**ROI beim Öffnen:** {((loot_profit/total_key_cost)*100):.1f}%\n**ROI beim Verkauf:** {((direct_profit/total_key_cost)*100):.1f}%")
-        elif direct_profit > loot_profit:
-            difference = direct_profit - loot_profit
-            st.warning(f"⚖️ **DIREKT VERKAUFEN BESSER**\n\nDirektverkauf bringt **{format_gw2_money(int(difference))}** mehr Gewinn.\n\n**ROI beim Verkauf:** {((direct_profit/total_key_cost)*100):.1f}%\n**ROI beim Öffnen:** {((loot_profit/total_key_cost)*100):.1f}%")
+        if open_profit > direct_profit:
+            difference = open_profit - direct_profit
+            st.success(f"🚀 **ÖFFNEN LOHNT SICH!**\n\nDurch Öffnen und Verkauf des Loots verdient ihr **{format_gw2_money(int(difference))}** mehr als durch Direktverkauf.\n\n**ROI beim Öffnen:** {((open_profit / total_key_cost) * 100):.1f}%\n**ROI beim Verkauf:** {((direct_profit / total_key_cost) * 100):.1f}%")
+        elif direct_profit > open_profit:
+            difference = direct_profit - open_profit
+            st.warning(f"⚖️ **DIREKT VERKAUFEN BESSER**\n\nDirektverkauf bringt **{format_gw2_money(int(difference))}** mehr Gewinn.\n\n**ROI beim Verkauf:** {((direct_profit / total_key_cost) * 100):.1f}%\n**ROI beim Öffnen:** {((open_profit / total_key_cost) * 100):.1f}%")
         else:
-            st.info("💭 **GLEICHWERTIG**\n\nBoth options yield similar profit margins.")
-    
+            st.info("💭 **GLEICHWERTIG**\n\nBeide Optionen liefern ähnliche Renditen.")
+
     with col_b:
-        if loot_profit > direct_profit:
-            savings_pct = ((loot_profit - direct_profit) / direct_profit * 100)
+        if open_profit > direct_profit and direct_profit != 0:
+            savings_pct = ((open_profit - direct_profit) / abs(direct_profit) * 100)
             st.metric("Zusatz-Gewinn durch Öffnen", f"+{savings_pct:.1f}%")
-        else:
-            loss_pct = ((direct_profit - loot_profit) / loot_profit * 100)
+        elif direct_profit > open_profit and open_profit != 0:
+            loss_pct = ((direct_profit - open_profit) / abs(open_profit) * 100)
             st.metric("Potentieller Verlust durch Öffnen", f"-{loss_pct:.1f}%")
-    
-    st.divider()
-    
-    # --- DETAILLIERTE LOOT-TABELLE ---
-    st.subheader("📋 Detaillierte Loot-Berechnung")
-    
-    # Kategorisierte Anzeige
-    tab_loot_common, tab_loot_mat, tab_loot_rare, tab_loot_summary = st.tabs(
-        ["🎁 Häufige Drops", "⛏️ Materialien", "💎 Seltene Items", "📊 Zusammenfassung"]
-    )
-    
-    with tab_loot_common:
-        st.markdown("**Häufig vorkommende Loot-Items**")
-        common_items = [item for item in loot_analysis["items"] if item["type"] == "common"]
-        if common_items:
-            common_df = pd.DataFrame(common_items)[["name", "drop_rate", "expected_qty", "unit_value", "total_value"]]
-            common_df.columns = ["Item", "Drop-Rate", "Erwartete Menge", "Einheit", "Wert TP"]
-            st.dataframe(common_df, use_container_width=True, hide_index=True)
-            total_common = sum(item["total_value"] for item in common_items)
-            st.metric("Kategoriegewinn", format_gw2_money(int(total_common)))
-    
-    with tab_loot_mat:
-        st.markdown("**Handwerksmaterialien**")
-        mat_items = [item for item in loot_analysis["items"] if item["type"] == "material"]
-        if mat_items:
-            mat_df = pd.DataFrame(mat_items)[["name", "drop_rate", "expected_qty", "unit_value", "total_value"]]
-            mat_df.columns = ["Material", "Drop-Rate", "Erwartete Menge", "Einheit", "Wert TP"]
-            st.dataframe(mat_df, use_container_width=True, hide_index=True)
-            total_mat = sum(item["total_value"] for item in mat_items)
-            st.metric("Kategoriegewinn", format_gw2_money(int(total_mat)))
-    
-    with tab_loot_rare:
-        st.markdown("**Seltene & Wertvolle Items**")
-        rare_items = [item for item in loot_analysis["items"] if item["type"] == "rare"]
-        if rare_items:
-            rare_df = pd.DataFrame(rare_items)[["name", "drop_rate", "expected_qty", "unit_value", "total_value"]]
-            rare_df.columns = ["Item", "Drop-Rate", "Erwartete Menge", "Einheit", "Wert TP"]
-            st.dataframe(rare_df, use_container_width=True, hide_index=True)
-            total_rare = sum(item["total_value"] for item in rare_items)
-            st.metric("Kategoriegewinn", format_gw2_money(int(total_rare)))
         else:
-            st.info("Keine seltenen Items in dieser Analyse.")
-    
-    with tab_loot_summary:
-        st.markdown("**Gewinn-Übersicht**")
-        summary_data = []
-        
-        for category, value in loot_analysis["by_category"].items():
-            if value > 0:
-                summary_data.append({
-                    "Kategorie": category.replace("_", " ").title(),
-                    "Wert": format_gw2_money(int(value)),
-                    "Anteil": f"{(value/loot_value*100):.1f}%" if loot_value > 0 else "0%"
-                })
-        
-        if summary_data:
-            st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
-        
-        st.divider()
-        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-        with col_s1:
-            st.metric("Schlüssel-Kosten", format_gw2_money(int(total_key_cost)))
-        with col_s2:
-            st.metric("Loot-Wert (brutto)", format_gw2_money(int(loot_analysis["total_value"])))
-        with col_s3:
-            st.metric("Nach TP-Gebühren", format_gw2_money(int(loot_value)))
-        with col_s4:
-            st.metric("Reingewinn", format_gw2_money(int(loot_profit)))
-    
+            st.metric("Vergleich", "Keine eindeutige Differenz")
+
     st.divider()
     st.markdown("**ℹ️ Hinweise zur Analyse:**")
     st.markdown("""
