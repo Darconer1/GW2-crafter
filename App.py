@@ -613,7 +613,7 @@ with tab1:
 
     df_cooldowns = pd.DataFrame(cooldown_results).sort_values(by="Reingewinn", ascending=False)
     st.markdown("### Übersicht: Daily Cooldowns nach aktuellem Gewinn")
-    st.dataframe(df_cooldowns["Gegenstand VK-Preis Herstellkosten Reingewinn Empfehlung Preis vs Ø".split()], use_container_width=True, hide_index=True)
+    st.dataframe(df_cooldowns[["Gegenstand", "VK-Preis", "Herstellkosten", "Reingewinn", "Empfehlung", "Preis vs Ø"]], use_container_width=True, hide_index=True)
 
     st.markdown("---")
     st.markdown("### Detaillierte Zutatenanalyse und Verwendung")
