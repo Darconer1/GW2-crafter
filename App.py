@@ -1373,8 +1373,9 @@ with tab5:
     lodestone_sell = get_price(lodestone_id, "sells")
 
     sliver_cost = sliver_buy * 16
-    min_sell_price = math.ceil(sliver_cost / 0.85) if sliver_cost > 0 else 0
-    current_revenue = int(lodestone_sell * 0.85)
+    net_sell_multiplier = 0.85  # nur Verkauf unterliegt der 15%-Handelsposten-Gebühr
+    min_sell_price = math.ceil(sliver_cost / net_sell_multiplier) if sliver_cost > 0 else 0
+    current_revenue = int(lodestone_sell * net_sell_multiplier)
     net_profit = current_revenue - sliver_cost
     profit_ok = net_profit > 0
     profit_label = "Rentabel" if profit_ok else "Nicht rentabel" if net_profit < 0 else "Break-even"
@@ -1383,7 +1384,7 @@ with tab5:
     with col1:
         st.metric("Sliver Buy-Order (1)", format_gw2_money(sliver_buy))
         st.metric("Kosten für 16 Slivers", format_gw2_money(sliver_cost))
-        st.metric("Mindestverkaufspreis (Break-Even)", format_gw2_money(min_sell_price))
+        st.metric("Mindestverkaufspreis (vor 15 % Gebühr)", format_gw2_money(min_sell_price))
     with col2:
         st.metric("Lodestone Sell-Order (1)", format_gw2_money(lodestone_sell))
         st.metric("Erlös nach 15 % Gebühren", format_gw2_money(current_revenue))
