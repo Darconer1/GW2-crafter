@@ -88,6 +88,37 @@ def fetch_db_prices_simple(item_id, days=30):
     conn.close()
     return [r[0] for r in rows]
 
+def build_flipping_history_dataframe():
+    records = []
+    for label, item_id in FLIP_IDS.items():
+        history = price_history.get(str(item_id), {}).get('data', [])
+        if len(history) < 2:
+            rows = fetch_db_prices(item_id, days=120)
+            history = [{
+                'timestamp': r[2],
+                'sell': r[0],
+                'buy': r[1]
+            } for r in rows if r[2]]
+
+        for entry in history:
+            try:
+                ts = pd.to_datetime(entry['timestamp'])
+            except Exception:
+                continue
+            records.append({
+                'timestamp': ts,
+                f'{label} Sell': entry.get('sell', 0) or 0,
+                f'{label} Buy': entry.get('buy', 0) or 0
+            })
+
+    if not records:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+    df = df.sort_values('timestamp')
+    df = df.groupby('timestamp').max()
+    return df
+
 # --- HILFSFUNKTIONEN ---
 def format_gw2_money(copper):
     if pd.isna(copper) or copper <= 0: return "0s 0c"
@@ -934,13 +965,18 @@ MF_MATERIAL_PARE = {
 ECTO_ID = 19721
 ENCRYPTION_ID = 75919
 
+FLIP_IDS = {
+    "Evergreen Sliver": 68952,
+    "Evergreen Lodestone": 68942
+}
+
 # Fraktale-Items
 FRACTAL_RELIC_ID = 74166
 PRISTINE_ENCRYPTION_ID = 75921
 INFUSION_ID = 77508
 LEGENDARY_INSIGHT_ID = 77290
 
-ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + [ECTO_ID, ENCRYPTION_ID, FRACTAL_RELIC_ID, PRISTINE_ENCRYPTION_ID, INFUSION_ID, LEGENDARY_INSIGHT_ID]
+ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + list(FLIP_IDS.values()) + [ECTO_ID, ENCRYPTION_ID, FRACTAL_RELIC_ID, PRISTINE_ENCRYPTION_ID, INFUSION_ID, LEGENDARY_INSIGHT_ID]
 for p in MF_MATERIAL_PARE.values():
     ALL_IDS.extend([p["t5"], p["t6"]])
 # Ergänze alle IDs aus der Fractal Loot Tabelle (falls vorhanden), damit wir Preise für diese Items laden
@@ -979,7 +1015,7 @@ with st.expander("🛠️ API Diagnose (Klicke für Details)", expanded=(not liv
 
 price_history = load_price_history()
 if live_data:
-    for name, idx in {**COOLDOWN_IDS, **RAW_MAT_IDS}.items():
+    for name, idx in {**COOLDOWN_IDS, **RAW_MAT_IDS, **FLIP_IDS}.items():
         info = live_data.get(idx, {})
         update_history_entry(price_history, idx, name, info.get("sells", {}).get("unit_price", 0), info.get("buys", {}).get("unit_price", 0))
     for row in FIXED_FRACTAL_DROPS:
@@ -1024,7 +1060,7 @@ with st.sidebar:
     if use_ai_history or use_ai_fractal or use_ai_mystic_forge:
         st.warning("KI außerhalb der Daily Cooldowns wird nur bei expliziter Aktivierung verwendet.")
 
-tab1, tab2, tab3, tab4 = st.tabs(["🕒 Daily Cooldowns", "📉 Fraktale", "🔮 Mystic Forge", "📊 Historie"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🕒 Daily Cooldowns", "📉 Fraktale", "🔮 Mystic Forge", "📊 Historie", "🔁 Flipping"])
 
 def get_price(item_id, mode="buys"):
     return live_data.get(item_id, {}).get(mode, {}).get("unit_price", 0)
@@ -1323,3 +1359,58 @@ with tab4:
                 st.write(f"**Begründung:** {assessment['reasoning']}")
             with col3:
                 st.write(f"**Vertrauen:** {assessment['confidence']}")
+
+# --- TAB 5: FLIPPING ANALYSE ---
+with tab5:
+    st.header("🔁 Flipping: Evergreen Sliver ↔ Evergreen Lodestone")
+    st.markdown(
+        "Vergleicht historische Marktpreise für Evergreen Sliver und Evergreen Lodestone und prüft, ob der Flipping-Trade aktuell rentabel ist."
+    )
+
+    sliver_id = FLIP_IDS["Evergreen Sliver"]
+    lodestone_id = FLIP_IDS["Evergreen Lodestone"]
+    sliver_buy = get_price(sliver_id, "buys")
+    lodestone_sell = get_price(lodestone_id, "sells")
+
+    sliver_cost = sliver_buy * 16
+    min_sell_price = math.ceil(sliver_cost / 0.85) if sliver_cost > 0 else 0
+    current_revenue = int(lodestone_sell * 0.85)
+    net_profit = current_revenue - sliver_cost
+    profit_ok = net_profit > 0
+    profit_label = "Rentabel" if profit_ok else "Nicht rentabel" if net_profit < 0 else "Break-even"
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Sliver Buy-Order (1)", format_gw2_money(sliver_buy))
+        st.metric("Kosten für 16 Slivers", format_gw2_money(sliver_cost))
+        st.metric("Mindestverkaufspreis (Break-Even)", format_gw2_money(min_sell_price))
+    with col2:
+        st.metric("Lodestone Sell-Order (1)", format_gw2_money(lodestone_sell))
+        st.metric("Erlös nach 15 % Gebühren", format_gw2_money(current_revenue))
+        st.metric("Aktueller Netto-Profit", format_gw2_money(net_profit))
+
+    if profit_ok:
+        st.success(f"🚀 Aktuell rentabel: {format_gw2_money(net_profit)} Profit")
+    elif net_profit < 0:
+        st.warning(f"⚠️ Aktuell nicht rentabel: {format_gw2_money(net_profit)} Verlust")
+    else:
+        st.info("⚖️ Break-even: Aktuell keine Gewinnspanne.")
+
+    if min_sell_price > 0:
+        diff = lodestone_sell - min_sell_price
+        if diff >= 0:
+            st.write(f"Der aktuelle Sell-Order liegt **{format_gw2_money(diff)} über** dem Break-Even-Preis.")
+        else:
+            st.write(f"Der aktuelle Sell-Order liegt **{format_gw2_money(abs(diff))} unter** dem Break-Even-Preis.")
+
+    st.divider()
+    st.subheader("📈 Historische Preisentwicklung")
+    df_flip_history = build_flipping_history_dataframe()
+    if df_flip_history.empty:
+        st.info("Es sind noch keine historischen Daten für diesen Flip verfügbar. Bitte warte auf den nächsten Preisabgleich.")
+    else:
+        st.line_chart(df_flip_history)
+        if "Evergreen Sliver Buy" in df_flip_history.columns and "Evergreen Lodestone Sell" in df_flip_history.columns:
+            df_flip_history = df_flip_history.copy()
+            df_flip_history["Estimated Net Profit"] = (df_flip_history["Evergreen Lodestone Sell"] * 0.85) - (df_flip_history["Evergreen Sliver Buy"] * 16)
+            st.line_chart(df_flip_history[["Estimated Net Profit"]])

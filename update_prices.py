@@ -50,8 +50,13 @@ MF_MATERIAL_PARE = {
 ECTO_ID = 19721
 ENCRYPTION_ID = 75919
 
+FLIP_IDS = {
+    "Evergreen Sliver": 68952,
+    "Evergreen Lodestone": 68942
+}
+
 # Alle Item IDs sammeln
-ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + [ECTO_ID, ENCRYPTION_ID]
+ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + [ECTO_ID, ENCRYPTION_ID] + list(FLIP_IDS.values())
 for p in MF_MATERIAL_PARE.values():
     ALL_IDS.extend([p["t5"], p["t6"]])
 ALL_IDS = list(set(ALL_IDS))
