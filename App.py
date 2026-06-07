@@ -1151,11 +1151,11 @@ with tab1:
 
 # --- TAB 2: FRAKTAL RENDITE ---
 with tab2:
-    st.header("📉 Fraktal-Verschlüsselungen & Loot-Analyse")
+    st.header("📉 Fraktal-Boxen & Loot-Analyse")
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        enc_amount = st.number_input("Anzahl Verschlüsselungen (zu öffnen)", value=100, step=10, min_value=1)
+        enc_amount = st.number_input("Anzahl Boxen (zu öffnen)", value=100, step=10, min_value=1)
         free_keys = st.number_input("Kostenlose Fractal Encryption Keys (Eigenbestand)", value=0, min_value=0, step=1)
 
     total_key_cost, key_cost_breakdown = calculate_key_cost(enc_amount)
@@ -1174,7 +1174,7 @@ with tab2:
         st.write(f"- 20s (1-30 Keys): {format_gw2_money(int(key_cost_breakdown['20s (1-30)']))}")
         st.write(f"- 25s 4c (31-60 Keys): {format_gw2_money(int(key_cost_breakdown['25s 4c (31-60)']))}")
         st.write(f"- 30s (61+ Keys): {format_gw2_money(int(key_cost_breakdown['30s (61+)']))}")
-        st.metric("Aktuelle TP-Verkaufsrate für Verschlüsselungen", format_gw2_money(int(enc_sell_price)))
+        st.metric("Aktuelle TP-Verkaufsrate für Boxen", format_gw2_money(int(enc_sell_price)))
         st.metric("Erlös bei Direktverkauf", format_gw2_money(int(direct_sell_value)))
         st.metric("Netto-Gewinn beim Verkauf", format_gw2_money(int(direct_profit)))
 
@@ -1204,12 +1204,12 @@ with tab2:
         })
 
     st.dataframe(pd.DataFrame(df_rows), use_container_width=True, hide_index=True)
-    st.markdown(f"**Erwarteter Gesamtwert für {enc_amount} geöffnete Verschlüsselungen:** {format_gw2_money(int(expected_loot_value))}")
+    st.markdown(f"**Erwarteter Gesamtwert für {enc_amount} geöffnete Boxen:** {format_gw2_money(int(expected_loot_value))}")
     st.markdown(f"**Durchschnittlicher erwarteter Wert pro Öffnung:** {format_gw2_money(int(expected_loot_per_key))}")
 
-    st.markdown("**Vergleich mit aktuellem Key-Verkauf**")
+    st.markdown("**Vergleich mit aktuellem Box-Verkauf**")
     st.write(f"- Erwarteter Loot-Wert (laut fixer Tabelle): {format_gw2_money(int(expected_loot_value))}")
-    st.write(f"- Direktverkauf aller Keys (TP): {format_gw2_money(int(direct_sell_value))}")
+    st.write(f"- Direktverkauf aller Boxen im TP: {format_gw2_money(int(direct_sell_value))}")
     if expected_loot_value > direct_sell_value:
         st.success(f"Öffnen könnte besser sein (+{format_gw2_money(int(expected_loot_value - direct_sell_value))})")
     else:
@@ -1219,7 +1219,7 @@ with tab2:
         st.divider()
         st.subheader("🆓 Szenario: Kostenlose Fractal Encryption Keys")
         buy_price = enc_buy_price
-        st.write(f"Aktueller TP-Kaufpreis für Verschlüsselungen: {format_gw2_money(int(buy_price))}")
+        st.write(f"Aktueller TP-Kaufpreis für Boxen: {format_gw2_money(int(buy_price))}")
         st.write(f"Maximal rentabler Einkaufspreis pro Verschlüsselung: {format_gw2_money(int(expected_loot_per_key))}")
         free_profit = (expected_loot_per_key - buy_price) * free_keys
         if buy_price and free_profit > 0:
@@ -1227,7 +1227,7 @@ with tab2:
         elif buy_price and free_profit <= 0:
             st.warning(f"Empfehlung: Nicht kaufen. Der aktuelle TP-Kaufpreis ist höher als der erwartete Loot-Wert.\nWarte auf günstigere Encryption-Preise oder verkaufe die Keys direkt in späteren Situationen.")
         else:
-            st.info("Aktueller TP-Kaufpreis für Verschlüsselungen ist nicht verfügbar. Bitte prüfen Sie die API oder schließen Sie den Streamlit-Neustart nicht aus.")
+            st.info("Aktueller TP-Kaufpreis für Boxen ist nicht verfügbar. Bitte prüfen Sie die API oder schließen Sie den Streamlit-Neustart nicht aus.")
 
     st.divider()
     st.subheader("💡 Rentabilitätsanalyse")
