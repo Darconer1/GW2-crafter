@@ -119,6 +119,72 @@ def build_flipping_history_dataframe():
     df = df.groupby('timestamp').max()
     return df
 
+
+def build_history_movers(history, item_map):
+    rows = []
+    for label, item_id in item_map.items():
+        data = history.get(str(item_id), {}).get('data', [])
+        if len(data) < 2:
+            continue
+        df = pd.DataFrame(data)
+        if df.empty or 'sell' not in df.columns:
+            continue
+        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+        df = df.dropna(subset=['timestamp']).sort_values('timestamp')
+        if len(df) < 2:
+            continue
+
+        first_price = int(df.iloc[0]['sell'] or 0)
+        last_price = int(df.iloc[-1]['sell'] or 0)
+        if first_price <= 0:
+            continue
+
+        delta = last_price - first_price
+        pct_change = (delta / first_price) * 100 if first_price else 0
+        rows.append({
+            'Item': label,
+            'Erster Preis': format_gw2_money(first_price),
+            'Letzter Preis': format_gw2_money(last_price),
+            'Δ Preis': format_gw2_money(delta),
+            'Δ %': f"{pct_change:+.1f}%",
+            'Abs Δ %': abs(pct_change),
+            'Datenpunkte': len(df)
+        })
+
+    if not rows:
+        return pd.DataFrame()
+
+    dfm = pd.DataFrame(rows)
+    dfm = dfm.sort_values('Abs Δ %', ascending=False)
+    dfm = dfm.drop(columns=['Abs Δ %'])
+    return dfm
+
+
+def summarize_cooldown_profit(fee_multiplier=0.85):
+    rows = []
+    for cooldown_name, cooldown_id in COOLDOWN_IDS.items():
+        recipe = DAILY_COOLDOWN_RECIPES.get(cooldown_name, [])
+        craft_cost = 0
+        for ing in recipe:
+            if ing.get('id'):
+                unit = get_price(ing['id'], 'buys') or get_price(ing['id'], 'sells') or 0
+                craft_cost += unit * ing['qty']
+            else:
+                craft_cost += ing.get('qty', 0)
+        revenue = get_price(cooldown_id, 'sells') * fee_multiplier
+        profit = revenue - craft_cost
+        rows.append({
+            'Cooldown': cooldown_name,
+            'Aktueller Verkauf': format_gw2_money(int(get_price(cooldown_id, 'sells'))),
+            'Herstellkosten': format_gw2_money(int(craft_cost)),
+            'Reingewinn': format_gw2_money(int(profit)),
+            'ROI': f"{((profit / craft_cost) * 100 if craft_cost else 0):+.1f}%"
+        })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df.sort_values('Reingewinn', ascending=False)
+
 # --- HILFSFUNKTIONEN ---
 def format_gw2_money(copper):
     if pd.isna(copper) or copper <= 0: return "0s 0c"
@@ -1060,7 +1126,68 @@ with st.sidebar:
     if use_ai_history or use_ai_fractal or use_ai_mystic_forge:
         st.warning("KI außerhalb der Daily Cooldowns wird nur bei expliziter Aktivierung verwendet.")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["🕒 Daily Cooldowns", "📉 Fraktale", "🔮 Mystic Forge", "📊 Historie", "🔁 Flipping"])
+    all_history_options = {**COOLDOWN_IDS, **RAW_MAT_IDS}
+
+def get_price(item_id, mode="buys"):
+    return live_data.get(item_id, {}).get(mode, {}).get("unit_price", 0)
+
+tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏠 Übersicht", "🕒 Daily Cooldowns", "📉 Fraktale", "🔮 Mystic Forge", "📊 Historie", "🔁 Flipping"])
+
+with tab0:
+    st.header("🏠 Startseite / Übersicht")
+    st.markdown("Schneller Überblick über die wichtigsten Markttrends, historische Preisbewegungen und Handelschancen.")
+
+    history_movers_df = build_history_movers(price_history, all_history_options)
+    best_cooldowns = summarize_cooldown_profit(fee_multiplier)
+
+    sliver_id = FLIP_IDS.get("Evergreen Sliver")
+    lodestone_id = FLIP_IDS.get("Evergreen Lodestone")
+    sliver_buy = get_price(sliver_id, "buys")
+    lodestone_sell = get_price(lodestone_id, "sells")
+    sliver_cost = sliver_buy * 16
+    current_revenue = int(lodestone_sell * 0.85)
+    flip_profit = current_revenue - sliver_cost
+    flip_status = "Rentabel" if flip_profit > 0 else "Nicht rentabel" if flip_profit < 0 else "Break-even"
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Getrackte Materialien", len(all_history_options))
+        st.metric("Live Items aus API", len(live_data))
+        st.metric("Historische Preis-Tracker", len(price_history))
+    with col2:
+        if not history_movers_df.empty:
+            top_mover = history_movers_df.iloc[0]
+            st.metric("Stärkster historischer Mover", top_mover['Item'], top_mover['Δ %'])
+        else:
+            st.metric("Stärkster historischer Mover", "Keine Daten", "-")
+        if not best_cooldowns.empty:
+            best = best_cooldowns.iloc[0]
+            st.metric("Bestes Cooldown-Gewinnpotenzial", best['Cooldown'], best['Reingewinn'])
+        else:
+            st.metric("Bestes Cooldown-Gewinnpotenzial", "Keine Daten", "-")
+        st.metric("Flipping-Status", flip_status, format_gw2_money(int(flip_profit)))
+    with col3:
+        st.metric("Aktuelle API-Last", f"{len(live_data)}/{len(ALL_IDS)} Items", "Live-Daten")
+        st.metric("Top 5 Historische Mover", "Zeigt nachfolgend", "Sortiert nach Δ %")
+        st.metric("KI aktiviert", "In Sidebar steuerbar", "Deaktiviert standardmäßig")
+
+    st.subheader("Top 5 Historische Bewegungen")
+    if history_movers_df.empty:
+        st.info("Noch nicht genügend historische Preisdaten vorhanden.")
+    else:
+        st.dataframe(history_movers_df.head(5), use_container_width=True, hide_index=True)
+
+    st.subheader("Beste Daily Cooldown Chancen")
+    if best_cooldowns.empty:
+        st.info("Keine Cooldown-Daten verfügbar.")
+    else:
+        st.dataframe(best_cooldowns.head(5)[['Cooldown', 'Aktueller Verkauf', 'Herstellkosten', 'Reingewinn', 'ROI']], use_container_width=True, hide_index=True)
+
+    st.subheader("Flipping Kurzcheck")
+    st.write(f"- Evergreen Sliver Buy: {format_gw2_money(sliver_buy)}")
+    st.write(f"- Evergreen Lodestone Sell: {format_gw2_money(lodestone_sell)}")
+    st.write(f"- Netto-Gewinn bei aktuell 16 Slivers → 1 Lodestone: {format_gw2_money(int(flip_profit))}")
+
 
 def get_price(item_id, mode="buys"):
     return live_data.get(item_id, {}).get(mode, {}).get("unit_price", 0)
@@ -1291,7 +1418,15 @@ with tab3:
 # --- TAB 4: HISTORISCHE TRENDS ---
 with tab4:
     st.header("📊 Historische Diagramme")
-    all_history_options = {**COOLDOWN_IDS, **RAW_MAT_IDS}
+    st.markdown("Erste Übersicht: Alle trackbaren Materialien nach der größten historischen Preisänderung.")
+    history_movers_df = build_history_movers(price_history, all_history_options)
+
+    if history_movers_df.empty:
+        st.info("Noch nicht genügend historische Preisdaten gesammelt. Bitte warte auf den nächsten Preisabgleich.")
+    else:
+        st.dataframe(history_movers_df, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
     selected_trend_name = st.selectbox("Wähle ein Material:", list(all_history_options.keys()))
     
     if selected_trend_name:
