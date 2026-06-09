@@ -397,6 +397,30 @@ DAILY_COOLDOWN_USAGE = {
     ]
 }
 
+# --- REZEPTE FÜR ECTOPLASM REFINEMENTS ---
+ECTOPLASM_REFINEMENT_RECIPES = {
+    "Lump of Mithrillium": [
+        {"name": "Glob of Ectoplasm", "id": 19721, "qty": 1},
+        {"name": "Mithril Ingot", "id": 19684, "qty": 1},
+        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": THERMOCATALYTIC_REAGENT_PRICE}
+    ],
+    "Glob of Elder Spirit Residue": [
+        {"name": "Glob of Ectoplasm", "id": 19721, "qty": 1},
+        {"name": "Elder Wood Plank", "id": 19722, "qty": 1},
+        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": THERMOCATALYTIC_REAGENT_PRICE}
+    ],
+    "Spool of Thick Elonian Cord": [
+        {"name": "Glob of Ectoplasm", "id": 19721, "qty": 1},
+        {"name": "Cured Thick Leather Square", "id": 19729, "qty": 1},
+        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": THERMOCATALYTIC_REAGENT_PRICE}
+    ],
+    "Spool of Silk Weaving Thread": [
+        {"name": "Glob of Ectoplasm", "id": 19721, "qty": 1},
+        {"name": "Bolt of Silk", "id": 19748, "qty": 1},
+        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": THERMOCATALYTIC_REAGENT_PRICE}
+    ]
+}
+
 # --- REZEPTE FÜR DAILY COOLDOWN MATERIALIEN (Beispiele) ---
 # Diese zeigen mögliche Verwendungen und deren Profitabilität
 
@@ -530,6 +554,44 @@ def get_item_average(item_id, days=30):
         return None
     ma, _ = moving_average(item_id, days)
     return ma
+
+def get_item_average(item_id, days=30):
+    if item_id is None:
+        return None
+    ma, _ = moving_average(item_id, days)
+    return ma
+
+def calculate_price_change(item_id, days=30):
+    """
+    Berechnet die Preisveränderung eines Items über X Tage.
+    Returns: (first_price, last_price, change_absolute, change_percent)
+    """
+    try:
+        # Versuche, aus der Datenbank zu laden
+        rows = fetch_db_prices_simple(item_id, days)
+        if len(rows) >= 2:
+            first_price = rows[0]
+            last_price = rows[-1]
+            change_abs = last_price - first_price
+            change_pct = (change_abs / first_price * 100) if first_price > 0 else 0
+            return first_price, last_price, change_abs, change_pct
+    except Exception:
+        pass
+    
+    # Fallback zu lokaler JSON
+    try:
+        hist = price_history.get(str(item_id), {}).get('data', [])
+        if len(hist) >= 2:
+            first_price = int(hist[0].get('sell', 0) or 0)
+            last_price = int(hist[-1].get('sell', 0) or 0)
+            if first_price > 0:
+                change_abs = last_price - first_price
+                change_pct = (change_abs / first_price * 100)
+                return first_price, last_price, change_abs, change_pct
+    except Exception:
+        pass
+    
+    return None, None, None, None
 
 # --- PROFIT-ANALYSE FÜR REZEPTE ---
 def calculate_recipe_profit(recipe, fee_multiplier=0.85):
@@ -992,6 +1054,27 @@ COOLDOWN_IDS = {
     "Spiritwood Plank": 46736
 }
 
+# --- ECTOPLASM REFINEMENTS (Neue tägliche Cooldowns) ---
+ECTOPLASM_REFINEMENTS = {
+    "Lump of Mithrillium": 46753,
+    "Glob of Elder Spirit Residue": 46754,
+    "Spool of Thick Elonian Cord": 46755,
+    "Spool of Silk Weaving Thread": 46756
+}
+
+# Handelbares Basismaterial für Ectoplasm Refinements
+ECTOPLASM_BASE_MATERIALS = {
+    "Glob of Ectoplasm": 19721,
+    "Mithril Ingot": 19684,
+    "Elder Wood Plank": 19722,
+    "Cured Thick Leather Square": 19729,
+    "Bolt of Silk": 19748
+}
+
+# NPC-Item mit festem Preis (nicht handelbar)
+THERMOCATALYTIC_REAGENT_ID = 46747
+THERMOCATALYTIC_REAGENT_PRICE = 149  # 1,49 Silber = 149 Kupfer
+
 # Mapping: Ascended Material -> Daily Cooldown Item
 ASCENDED_TO_COOLDOWN = {
     "Lump of Mithrillium": "Deldrimor Steel Ingot",
@@ -1042,7 +1125,7 @@ PRISTINE_ENCRYPTION_ID = 75921
 INFUSION_ID = 77508
 LEGENDARY_INSIGHT_ID = 77290
 
-ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + list(FLIP_IDS.values()) + [ECTO_ID, ENCRYPTION_ID, FRACTAL_RELIC_ID, PRISTINE_ENCRYPTION_ID, INFUSION_ID, LEGENDARY_INSIGHT_ID]
+ALL_IDS = list(COOLDOWN_IDS.values()) + list(ECTOPLASM_REFINEMENTS.values()) + list(ECTOPLASM_BASE_MATERIALS.values()) + list(RAW_MAT_IDS.values()) + list(FLIP_IDS.values()) + [ECTO_ID, ENCRYPTION_ID, FRACTAL_RELIC_ID, PRISTINE_ENCRYPTION_ID, INFUSION_ID, LEGENDARY_INSIGHT_ID, THERMOCATALYTIC_REAGENT_ID]
 for p in MF_MATERIAL_PARE.values():
     ALL_IDS.extend([p["t5"], p["t6"]])
 # Ergänze alle IDs aus der Fractal Loot Tabelle (falls vorhanden), damit wir Preise für diese Items laden
@@ -1081,7 +1164,7 @@ with st.expander("🛠️ API Diagnose (Klicke für Details)", expanded=(not liv
 
 price_history = load_price_history()
 if live_data:
-    for name, idx in {**COOLDOWN_IDS, **RAW_MAT_IDS, **FLIP_IDS}.items():
+    for name, idx in {**COOLDOWN_IDS, **ECTOPLASM_REFINEMENTS, **ECTOPLASM_BASE_MATERIALS, **RAW_MAT_IDS, **FLIP_IDS}.items():
         info = live_data.get(idx, {})
         update_history_entry(price_history, idx, name, info.get("sells", {}).get("unit_price", 0), info.get("buys", {}).get("unit_price", 0))
     for row in FIXED_FRACTAL_DROPS:
@@ -1126,7 +1209,7 @@ with st.sidebar:
     if use_ai_history or use_ai_fractal or use_ai_mystic_forge:
         st.warning("KI außerhalb der Daily Cooldowns wird nur bei expliziter Aktivierung verwendet.")
 
-    all_history_options = {**COOLDOWN_IDS, **RAW_MAT_IDS}
+    all_history_options = {**COOLDOWN_IDS, **ECTOPLASM_REFINEMENTS, **ECTOPLASM_BASE_MATERIALS, **RAW_MAT_IDS}
 
 def get_price(item_id, mode="buys"):
     return live_data.get(item_id, {}).get(mode, {}).get("unit_price", 0)
@@ -1192,89 +1275,94 @@ with tab0:
 def get_price(item_id, mode="buys"):
     return live_data.get(item_id, {}).get(mode, {}).get("unit_price", 0)
 
-# --- TAB 1: DAILY COOLDOWN PLANER (Ascended Material View) ---
+# --- TAB 1: DAILY COOLDOWN PLANER (Ectoplasm Refinements) ---
 with tab1:
-    st.header("🕒 Ascended-Materialien & Daily Cooldowns")
-    st.markdown("Zeigt für jedes ascended Material die benötigten Komponenten, Kaufempfehlungen und mögliche Weiterverarbeitung.")
+    st.header("⏳ Ectoplasm Refinements & Daily Cooldowns")
+    st.markdown("Zeigt die profitabelsten Ectoplasm Refinements und Kaufempfehlungen für Basis-Materialien auf Basis des 30-Tage-Trends.")
 
-    for asc_name, cooldown_name in ASCENDED_TO_COOLDOWN.items():
-        st.markdown("---")
-        with st.expander(f"{asc_name} → {cooldown_name}", expanded=False):
-            st.markdown(f"**Cooldown-Item:** {cooldown_name}")
+    # --- 1. NEU: Preistabelle Basis-Materialien (Sortiert nach Preisverfall) ---
+    st.subheader("📊 Handelbare Basis-Materialien (Kauf-Radar)")
+    base_mat_rows = []
+    
+    for name, item_id in ECTOPLASM_BASE_MATERIALS.items():
+        current_price = get_price(item_id, "sells") or get_price(item_id, "buys")
+        avg_price = get_item_average(item_id, 30)
+        
+        diff_pct = 0
+        if avg_price and avg_price > 0 and current_price:
+            diff_pct = ((current_price - avg_price) / avg_price) * 100
+            
+        rec = ingredient_price_assessment(name, item_id, 1)
+        
+        base_mat_rows.append({
+            "Material": name,
+            "Aktueller Preis": format_gw2_money(current_price) if current_price else "0c",
+            "30d Ø Preis": format_gw2_money(int(avg_price)) if avg_price else "N/A",
+            "Preisverfall (%)": diff_pct, # Versteckte Spalte für die Sortierung
+            "Abweichung": f"{diff_pct:+.1f}%" if avg_price else "N/A",
+            "Empfehlung": rec["Recommendation"]
+        })
+        
+    if base_mat_rows:
+        df_base = pd.DataFrame(base_mat_rows)
+        # Sortieren nach Preisverfall (stärkster Drop / negativster Wert ganz oben)
+        df_base = df_base.sort_values(by="Preisverfall (%)", ascending=True)
+        # Hilfsspalte für das UI entfernen
+        display_df = df_base.drop(columns=["Preisverfall (%)"])
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("Lade Daten für Basis-Materialien...")
 
-            # Zutaten für das Herstellen des Cooldowns
-            recipe = DAILY_COOLDOWN_RECIPES.get(cooldown_name, [])
-            st.markdown("**Benötigte Items für den Cooldown:**")
+    st.divider()
+
+    # --- 2. NEU: Die 4 Ectoplasm Refinements ---
+    st.subheader("🛠️ Refinement Cooldowns")
+    for ref_name, ref_id in ECTOPLASM_REFINEMENTS.items():
+        with st.expander(f"{ref_name}", expanded=False):
+            recipe = ECTOPLASM_REFINEMENT_RECIPES.get(ref_name, [])
+            st.markdown("**Benötigte Materialien:**")
+            
             ing_rows = []
-            for ing in recipe:
-                row = ingredient_price_assessment(ing["name"], ing.get("id"), ing["qty"])
-                ing_rows.append(row)
-            df_ing = pd.DataFrame(ing_rows).rename(columns={
-                "Ingredient": "Zutat",
-                "Quantity": "Menge",
-                "Current": "Aktueller Preis",
-                "Average": "Ø Preis",
-                "Diff": "Abweichung",
-                "Recommendation": "Empfehlung",
-                "Reason": "Begründung"
-            })
-            st.dataframe(df_ing, use_container_width=True, hide_index=True)
-
-            # Herstellkosten und Verkauf des Cooldowns
-            cooldown_id = COOLDOWN_IDS.get(cooldown_name)
-            sell_price = get_price(cooldown_id, "sells")
-            # Berechne Herstellkosten aus recipe (falls vorhanden)
             craft_cost = 0
+            
             for ing in recipe:
-                if ing.get("id"):
-                    unit = get_price(ing.get("id"), "buys") or get_price(ing.get("id"), "sells") or 0
-                    craft_cost += unit * ing.get("qty", 0)
+                # Prüfen, ob es sich um ein NPC-Item mit festem Preis handelt (Thermocatalytic Reagent)
+                if ing.get("fixed_price"):
+                    unit_price = ing["fixed_price"]
+                    cost = unit_price * ing["qty"]
+                    craft_cost += cost
+                    ing_rows.append({
+                        "Zutat": ing["name"],
+                        "Menge": ing["qty"],
+                        "Kosten/Aktuell": format_gw2_money(cost),
+                        "Empfehlung": "Fixkosten",
+                        "Begründung": "NPC-Item"
+                    })
                 else:
-                    # feste Gebühr
-                    craft_cost += ing.get("qty", 0)
-
+                    unit_price = get_price(ing.get("id"), "buys") or get_price(ing.get("id"), "sells") or 0
+                    craft_cost += unit_price * ing["qty"]
+                    row = ingredient_price_assessment(ing["name"], ing.get("id"), ing["qty"])
+                    ing_rows.append({
+                        "Zutat": ing["name"],
+                        "Menge": ing["qty"],
+                        "Kosten/Aktuell": row["Current"],
+                        "Empfehlung": row["Recommendation"],
+                        "Begründung": row["Reason"]
+                    })
+                    
+            st.dataframe(pd.DataFrame(ing_rows), use_container_width=True, hide_index=True)
+            
+            # Profit-Berechnung für das Refinement
+            sell_price = get_price(ref_id, "sells")
             revenue = sell_price * fee_multiplier
             profit = revenue - craft_cost
-
+            
             st.markdown(f"**Herstellkosten:** {format_gw2_money(int(craft_cost))}  —  **Verkauf (nach Gebühren):** {format_gw2_money(int(revenue))}")
+            
             if profit > 0:
-                st.success(f"💰 Direkter Verkauf des Cooldowns lohnt: Reingewinn {format_gw2_money(int(profit))}")
+                st.success(f"💰 Direkter Verkauf lohnt: Reingewinn {format_gw2_money(int(profit))}")
             else:
-                st.warning(f"⚠️ Direkter Verkauf des Cooldowns bringt {format_gw2_money(int(profit))} (Verlust).")
-
-            # Begründung / Empfehlung für Vorratskäufe der Zutaten
-            st.markdown("**Kaufempfehlungen für Zutaten (Vorrat):**")
-            for _, r in df_ing.iterrows():
-                st.write(f"- **{r['Zutat']}**: {r['Empfehlung']} — {r['Begründung']}")
-
-            # Welche Items kann man mit dem Cooldown herstellen (höherwertige Rezepte)?
-            st.divider()
-            st.markdown("**Mögliche Weiterverarbeitung / Rezepte mit diesem Cooldown:**")
-            cooldown_recipes = COOLDOWN_RECIPES.get(cooldown_name, [])
-            if cooldown_recipes:
-                out_rows = []
-                for r in cooldown_recipes:
-                    profit_data = calculate_recipe_profit(r, fee_multiplier=fee_multiplier)
-                    # Kaufempfehlungen für zusätzliche Komponenten (außer dem Cooldown)
-                    add_comps = []
-                    for ing in r.get("ingredients", []):
-                        if ing.get("name") == cooldown_name or ing.get("id") is None:
-                            continue
-                        comp_assess = ingredient_price_assessment(ing["name"], ing.get("id"), ing.get("qty"))
-                        add_comps.append((ing["name"], comp_assess["Recommendation"], comp_assess["Reason"]))
-
-                    out_rows.append({
-                        "Rezept": r["name"],
-                        "Eingabe-Kosten": format_gw2_money(int(profit_data["input_cost"])),
-                        "Ausgabe-Wert": format_gw2_money(int(profit_data["output_value"])),
-                        "Reingewinn": format_gw2_money(int(profit_data["profit"])),
-                        "ROI": f"{profit_data['roi']:+.1f}%",
-                        "Komponenten-Empfehlungen": ", ".join([f"{c[0]}: {c[1]} ({c[2]})" for c in add_comps])
-                    })
-
-                st.dataframe(pd.DataFrame(out_rows), use_container_width=True, hide_index=True)
-            else:
-                st.info("Keine Weiterverarbeitungsrezepte für dieses Item hinterlegt.")
+                st.warning(f"⚠️ Direkter Verkauf bringt {format_gw2_money(int(profit))} (Verlust).")
 
 # --- TAB 2: FRAKTAL RENDITE ---
 with tab2:

@@ -47,6 +47,20 @@ MF_MATERIAL_PARE = {
     "Staub": {"t5": 24274, "t6": 24275, "name": "Kristalliner Staub"}
 }
 
+ECTOPLASM_REFINEMENTS = {
+    "Lump of Mithrillium": 46753,
+    "Glob of Elder Spirit Residue": 46754,
+    "Spool of Thick Elonian Cord": 46755,
+    "Spool of Silk Weaving Thread": 46756
+}
+
+ECTOPLASM_BASE_MATERIALS = {
+    "Glob of Ectoplasm": 19721,
+    "Mithril Ingot": 19684,
+    "Elder Wood Plank": 19722,
+    "Cured Thick Leather Square": 19729,
+    "Bolt of Silk": 19748
+}
 ECTO_ID = 19721
 ENCRYPTION_ID = 75919
 
@@ -56,7 +70,7 @@ FLIP_IDS = {
 }
 
 # Alle Item IDs sammeln
-ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + [ECTO_ID, ENCRYPTION_ID] + list(FLIP_IDS.values())
+ALL_IDS = list(COOLDOWN_IDS.values()) + list(RAW_MAT_IDS.values()) + [ECTO_ID, ENCRYPTION_ID] + list(FLIP_IDS.values()) + list(ECTOPLASM_REFINEMENTS.values()) + list(ECTOPLASM_BASE_MATERIALS.values())
 for p in MF_MATERIAL_PARE.values():
     ALL_IDS.extend([p["t5"], p["t6"]])
 ALL_IDS = list(set(ALL_IDS))
