@@ -402,22 +402,22 @@ ECTOPLASM_REFINEMENT_RECIPES = {
     "Lump of Mithrillium": [
         {"name": "Glob of Ectoplasm", "id": 19721, "qty": 1},
         {"name": "Mithril Ingot", "id": 19684, "qty": 1},
-        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": THERMOCATALYTIC_REAGENT_PRICE}
+        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": 150}
     ],
     "Glob of Elder Spirit Residue": [
         {"name": "Glob of Ectoplasm", "id": 19721, "qty": 1},
         {"name": "Elder Wood Plank", "id": 19722, "qty": 1},
-        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": THERMOCATALYTIC_REAGENT_PRICE}
+        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": 150}
     ],
     "Spool of Thick Elonian Cord": [
         {"name": "Glob of Ectoplasm", "id": 19721, "qty": 1},
         {"name": "Cured Thick Leather Square", "id": 19729, "qty": 1},
-        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": THERMOCATALYTIC_REAGENT_PRICE}
+        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": 150}
     ],
     "Spool of Silk Weaving Thread": [
         {"name": "Glob of Ectoplasm", "id": 19721, "qty": 1},
         {"name": "Bolt of Silk", "id": 19748, "qty": 1},
-        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": THERMOCATALYTIC_REAGENT_PRICE}
+        {"name": "Thermocatalytic Reagent", "id": 46747, "qty": 1, "fixed_price": 150}
     ]
 }
 
