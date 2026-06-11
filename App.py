@@ -1363,7 +1363,14 @@ with tab1:
                 st.success(f"💰 Direkter Verkauf lohnt: Reingewinn {format_gw2_money(int(profit))}")
             else:
                 st.warning(f"⚠️ Direkter Verkauf bringt {format_gw2_money(int(profit))} (Verlust).")
-            difference = direct_profit - open_profit
+            user_analysis = analyze_user_table(FIXED_FRACTAL_DROPS, num_keys=enc_amount, fee_multiplier=fee_multiplier)
+            expected_loot_value = user_analysis['total_value']
+            expected_loot_per_key = expected_loot_value / enc_amount if enc_amount > 0 else 0
+            direct_sell_value = (enc_amount * enc_sell_price) * fee_multiplie           
+            open_profit = expected_loot_value - total_key_cost - total_box_cost
+            direct_profit = direct_sell_value - total_box_cost
+
+    
 # --- TAB 2: FRAKTAL RENDITE ---
 with tab2:
     st.header("📉 Fraktal-Boxen & Loot-Analyse")
