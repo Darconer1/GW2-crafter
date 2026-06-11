@@ -1370,7 +1370,7 @@ with tab2:
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        enc_amount = st.number_input("Anzahl Boxen (zu öffnen)", value=100, step=10, min_value=1)
+        enc_amount = st.number_input("Anzahl Boxen (zu öffnen)", value=30, step=10, min_value=1)
         free_keys = st.number_input("Kostenlose Fractal Encryption Keys (Eigenbestand)", value=0, min_value=0, step=1)
 
     # --- NEUE BERECHNUNGSGRUNDLAGE ---
