@@ -1383,8 +1383,7 @@ with tab2:
     open_profit = expected_loot_value - total_key_cost
     direct_profit = direct_sell_value - total_key_cost
 
-
-  with col2:
+    with col2:
         st.subheader("Schlüssel-Kosten & Verkauf")
         st.metric("Gesamtkosten für Keys", format_gw2_money(int(total_key_cost)))
         
@@ -1407,8 +1406,7 @@ with tab2:
         st.metric("Erlös bei Direktverkauf", format_gw2_money(int(direct_sell_value)))
         st.metric("Netto-Gewinn beim Verkauf", format_gw2_money(int(direct_profit)))
 
-
-  with col3:
+    with col3:
         st.subheader("Öffnen mit fixer Drop-Tabelle")
         st.metric("Erwarteter Loot-Wert gesamt", format_gw2_money(int(expected_loot_value)))
         st.metric("Erwarteter Wert pro Öffnung", format_gw2_money(int(expected_loot_per_key)))
