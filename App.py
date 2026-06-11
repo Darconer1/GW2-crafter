@@ -1364,7 +1364,6 @@ with tab1:
             else:
                 st.warning(f"⚠️ Direkter Verkauf bringt {format_gw2_money(int(profit))} (Verlust).")
  
-    
 # --- TAB 2: FRAKTAL RENDITE ---
 with tab2:
     st.header("📉 Fraktal-Boxen & Loot-Analyse")
@@ -1511,9 +1510,6 @@ with tab2:
     - Die Analyse geht von optimalem Loot-Verkauf aus (alle Items auf TP)
     - **Kosten:** Bei beiden Modellen (Öffnen vs. Direktverkauf) wird der *Einkaufswert* der Fraktal-Boxen vom Profit abgezogen, um die echte Gewinnspanne aufzuzeigen.
     """)
-
-
-
 
 # --- TAB 3: MYSTIC FORGE ---
 with tab3:
