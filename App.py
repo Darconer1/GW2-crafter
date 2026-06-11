@@ -1383,15 +1383,51 @@ with tab2:
     open_profit = expected_loot_value - total_key_cost
     direct_profit = direct_sell_value - total_key_cost
 
-    with col2:
+   with col2:
         st.subheader("Schlüssel-Kosten & Verkauf")
         st.metric("Gesamtkosten für Keys", format_gw2_money(int(total_key_cost)))
-        st.write(f"- 20s (1-30 Keys): {format_gw2_money(int(key_cost_breakdown['20s (1-30)']))}")
-        st.write(f"- 25s 4c (31-60 Keys): {format_gw2_money(int(key_cost_breakdown['25s 4c (31-60)']))}")
-        st.write(f"- 30s (61+ Keys): {format_gw2_money(int(key_cost_breakdown['30s (61+)']))}")
+        
+        # Helfer-Funktion für die farbige Anzeige des Gewinns pro Schlüssel
+        def get_key_profit_str(loot_val, key_cost):
+            profit = loot_val - key_cost
+            color = "green" if profit >= 0 else "red"
+            sign = "+" if profit >= 0 else "-"
+            # abs() nutzen, da format_gw2_money sonst bei negativen Werten "0s 0c" ausgibt
+            formatted_money = format_gw2_money(int(abs(profit)))
+            label = "Gewinn/Key" if profit >= 0 else "Verlust/Key"
+            return f":{color}[**{sign}{formatted_money}** {label}]"
+
+        # Anzeige der 3 Preis-Stufen inklusive farbigem Profit
+        st.write(f"- 20s (1-30 Keys): {format_gw2_money(int(key_cost_breakdown['20s (1-30)']))} | {get_key_profit_str(expected_loot_per_key, 2000)}")
+        st.write(f"- 25s 4c (31-60 Keys): {format_gw2_money(int(key_cost_breakdown['25s 4c (31-60)']))} | {get_key_profit_str(expected_loot_per_key, 2504)}")
+        st.write(f"- 30s (61+ Keys): {format_gw2_money(int(key_cost_breakdown['30s (61+)']))} | {get_key_profit_str(expected_loot_per_key, 3000)}")
+        
         st.metric("Aktuelle TP-Verkaufsrate für Boxen", format_gw2_money(int(enc_sell_price)))
         st.metric("Erlös bei Direktverkauf", format_gw2_money(int(direct_sell_value)))
         st.metric("Netto-Gewinn beim Verkauf", format_gw2_money(int(direct_profit)))
+    with col2:
+        st.subheader("Schlüssel-Kosten & Verkauf")
+        st.metric("Gesamtkosten für Keys", format_gw2_money(int(total_key_cost)))
+        
+        # Helfer-Funktion für die farbige Anzeige des Gewinns pro Schlüssel
+        def get_key_profit_str(loot_val, key_cost):
+            profit = loot_val - key_cost
+            color = "green" if profit >= 0 else "red"
+            sign = "+" if profit >= 0 else "-"
+            # abs() nutzen, da format_gw2_money sonst bei negativen Werten "0s 0c" ausgibt
+            formatted_money = format_gw2_money(int(abs(profit)))
+            label = "Gewinn/Key" if profit >= 0 else "Verlust/Key"
+            return f":{color}[**{sign}{formatted_money}** {label}]"
+
+        # Anzeige der 3 Preis-Stufen inklusive farbigem Profit
+        st.write(f"- 20s (1-30 Keys): {format_gw2_money(int(key_cost_breakdown['20s (1-30)']))} | {get_key_profit_str(expected_loot_per_key, 2000)}")
+        st.write(f"- 25s 4c (31-60 Keys): {format_gw2_money(int(key_cost_breakdown['25s 4c (31-60)']))} | {get_key_profit_str(expected_loot_per_key, 2504)}")
+        st.write(f"- 30s (61+ Keys): {format_gw2_money(int(key_cost_breakdown['30s (61+)']))} | {get_key_profit_str(expected_loot_per_key, 3000)}")
+        
+        st.metric("Aktuelle TP-Verkaufsrate für Boxen", format_gw2_money(int(enc_sell_price)))
+        st.metric("Erlös bei Direktverkauf", format_gw2_money(int(direct_sell_value)))
+        st.metric("Netto-Gewinn beim Verkauf", format_gw2_money(int(direct_profit)))
+
 
     with col3:
         st.subheader("Öffnen mit fixer Drop-Tabelle")
