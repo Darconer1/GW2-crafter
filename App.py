@@ -1492,6 +1492,8 @@ with tab2:
     """)
 
 
+
+
 # --- TAB 3: MYSTIC FORGE ---
 with tab3:
     st.header("🔮 Schmiede-Materialaufwertung")
