@@ -1396,7 +1396,7 @@ with tab2:
         
         # Helfer-Funktion für die farbige Anzeige des Gewinns pro Schlüssel
         def get_key_profit_str(loot_val, key_cost):
-            profit = loot_val - key_cost
+            profit = loot_val - key_cost - enc_buy_price
             color = "green" if profit >= 0 else "red"
             sign = "+" if profit >= 0 else "-"
             formatted_money = format_gw2_money(int(abs(profit)))
