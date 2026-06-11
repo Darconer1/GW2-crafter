@@ -1400,7 +1400,7 @@ with tab2:
             color = "green" if profit >= 0 else "red"
             sign = "+" if profit >= 0 else "-"
             formatted_money = format_gw2_money(int(abs(profit)))
-            label = "Gewinn/Key falls Boc aus TP bestellt" if profit >= 0 else "Verlust/Key falls Box aus TP bestellt"
+            label = "Gewinn/Key falls Box aus TP bestellt und geöffnet" if profit >= 0 else "Verlust/Key falls Box aus TP bestellt und geöffnet"
             return f":{color}[**{sign}{formatted_money}** {label}]"
 
         # Anzeige der 3 Preis-Stufen inklusive farbigem Profit
