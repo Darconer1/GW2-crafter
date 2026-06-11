@@ -1486,10 +1486,11 @@ with tab2:
     st.markdown("""
     - **Drop-Raten** basieren auf GW2-Community-Daten und können variieren
     - **Preise** stammen aus Live-API-Daten (alle 60 Sekunden aktualisiert)
-    - **Gebühren** beinhalten die 15% Handelsposten-Verkaufsgebühr
+    - **Gebühren** beinhalten die **15%** Handelsposten-Verkaufsgebühr
     - **Geistersplitter** werden über Fraktal-Relikte berechnet (1 Relikt ≈ 28 Shards)
     - Die Analyse geht von optimalem Loot-Verkauf aus (alle Items auf TP)
     """)
+
 
 # --- TAB 3: MYSTIC FORGE ---
 with tab3:
