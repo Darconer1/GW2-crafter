@@ -1363,7 +1363,7 @@ with tab1:
                 st.success(f"💰 Direkter Verkauf lohnt: Reingewinn {format_gw2_money(int(profit))}")
             else:
                 st.warning(f"⚠️ Direkter Verkauf bringt {format_gw2_money(int(profit))} (Verlust).")
-
+            difference = direct_profit - open_profit
 # --- TAB 2: FRAKTAL RENDITE ---
 with tab2:
     st.header("📉 Fraktal-Boxen & Loot-Analyse")
@@ -1373,15 +1373,22 @@ with tab2:
         enc_amount = st.number_input("Anzahl Boxen (zu öffnen)", value=100, step=10, min_value=1)
         free_keys = st.number_input("Kostenlose Fractal Encryption Keys (Eigenbestand)", value=0, min_value=0, step=1)
 
+    # --- NEUE BERECHNUNGSGRUNDLAGE ---
     total_key_cost, key_cost_breakdown = calculate_key_cost(enc_amount)
     enc_sell_price = get_price(ENCRYPTION_ID, "sells")
     enc_buy_price = get_price(ENCRYPTION_ID, "buys") or enc_sell_price
+    
+    # Gesamte Einkaufskosten der Boxen
+    total_box_cost = enc_buy_price * enc_amount
+    
     user_analysis = analyze_user_table(FIXED_FRACTAL_DROPS, num_keys=enc_amount, fee_multiplier=fee_multiplier)
     expected_loot_value = user_analysis['total_value']
     expected_loot_per_key = expected_loot_value / enc_amount if enc_amount > 0 else 0
     direct_sell_value = (enc_amount * enc_sell_price) * fee_multiplier
-    open_profit = expected_loot_value - total_key_cost
-    direct_profit = direct_sell_value - total_key_cost
+    
+    # Profite mit abgezogenen Box-Kosten
+    open_profit = expected_loot_value - total_key_cost - total_box_cost
+    direct_profit = direct_sell_value - total_box_cost
 
     with col2:
         st.subheader("Schlüssel-Kosten & Verkauf")
@@ -1392,7 +1399,6 @@ with tab2:
             profit = loot_val - key_cost
             color = "green" if profit >= 0 else "red"
             sign = "+" if profit >= 0 else "-"
-            # abs() nutzen, da format_gw2_money sonst bei negativen Werten "0s 0c" ausgibt
             formatted_money = format_gw2_money(int(abs(profit)))
             label = "Gewinn/Key" if profit >= 0 else "Verlust/Key"
             return f":{color}[**{sign}{formatted_money}** {label}]"
@@ -1404,13 +1410,20 @@ with tab2:
         
         st.metric("Aktuelle TP-Verkaufsrate für Boxen", format_gw2_money(int(enc_sell_price)))
         st.metric("Erlös bei Direktverkauf", format_gw2_money(int(direct_sell_value)))
-        st.metric("Netto-Gewinn beim Verkauf", format_gw2_money(int(direct_profit)))
+        
+        # Hover-Text für Direktverkauf (Flipping)
+        direct_profit_help = f"Berechnung: Erlös nach TP-Gebühr ({format_gw2_money(int(direct_sell_value))}) - Box-Einkaufspreis ({format_gw2_money(int(total_box_cost))})"
+        st.metric("Netto-Gewinn beim Verkauf", format_gw2_money(int(direct_profit)), help=direct_profit_help)
 
     with col3:
         st.subheader("Öffnen mit fixer Drop-Tabelle")
         st.metric("Erwarteter Loot-Wert gesamt", format_gw2_money(int(expected_loot_value)))
         st.metric("Erwarteter Wert pro Öffnung", format_gw2_money(int(expected_loot_per_key)))
-        st.metric("Gewinn beim Öffnen", format_gw2_money(int(open_profit)))
+        
+        # Hover-Text für das Öffnen der Boxen
+        open_profit_help = f"Berechnung: Loot-Wert ({format_gw2_money(int(expected_loot_value))}) - Key-Kosten ({format_gw2_money(int(total_key_cost))}) - Box-Einkaufspreis ({format_gw2_money(int(total_box_cost))})"
+        st.metric("Gewinn beim Öffnen", format_gw2_money(int(open_profit)), help=open_profit_help)
+        
         if expected_loot_per_key == 0:
             st.warning("Die Analyse konnte keinen erwarteten Loot-Wert pro Öffnung bestimmen. Bitte prüfe die Tabelle oder API-Daten.")
 
@@ -1461,13 +1474,19 @@ with tab2:
     st.subheader("💡 Rentabilitätsanalyse")
     col_a, col_b = st.columns([1, 1])
 
+    # Saubere ROI-Berechnung (verhindert Division durch Null)
+    invest_open = total_key_cost + total_box_cost
+    invest_direct = total_box_cost
+    roi_open = (open_profit / invest_open * 100) if invest_open > 0 else 0
+    roi_direct = (direct_profit / invest_direct * 100) if invest_direct > 0 else 0
+
     with col_a:
         if open_profit > direct_profit:
             difference = open_profit - direct_profit
-            st.success(f"🚀 **ÖFFNEN LOHNT SICH!**\n\nDurch Öffnen und Verkauf des Loots verdient ihr **{format_gw2_money(int(difference))}** mehr als durch Direktverkauf.\n\n**ROI beim Öffnen:** {((open_profit / total_key_cost) * 100):.1f}%\n**ROI beim Verkauf:** {((direct_profit / total_key_cost) * 100):.1f}%")
+            st.success(f"🚀 **ÖFFNEN LOHNT SICH!**\n\nDurch Öffnen und Verkauf des Loots verdient ihr **{format_gw2_money(int(difference))}** mehr als durch Direktverkauf.\n\n**ROI beim Öffnen:** {roi_open:.1f}%\n**ROI beim Verkauf:** {roi_direct:.1f}%")
         elif direct_profit > open_profit:
             difference = direct_profit - open_profit
-            st.warning(f"⚖️ **DIREKT VERKAUFEN BESSER**\n\nDirektverkauf bringt **{format_gw2_money(int(difference))}** mehr Gewinn.\n\n**ROI beim Verkauf:** {((direct_profit / total_key_cost) * 100):.1f}%\n**ROI beim Öffnen:** {((open_profit / total_key_cost) * 100):.1f}%")
+            st.warning(f"⚖️ **DIREKT VERKAUFEN BESSER**\n\nDirektverkauf bringt **{format_gw2_money(int(difference))}** mehr Gewinn.\n\n**ROI beim Verkauf:** {roi_direct:.1f}%\n**ROI beim Öffnen:** {roi_open:.1f}%")
         else:
             st.info("💭 **GLEICHWERTIG**\n\nBeide Optionen liefern ähnliche Renditen.")
 
@@ -1489,6 +1508,7 @@ with tab2:
     - **Gebühren** beinhalten die **15%** Handelsposten-Verkaufsgebühr
     - **Geistersplitter** werden über Fraktal-Relikte berechnet (1 Relikt ≈ 28 Shards)
     - Die Analyse geht von optimalem Loot-Verkauf aus (alle Items auf TP)
+    - **Kosten:** Bei beiden Modellen (Öffnen vs. Direktverkauf) wird der *Einkaufswert* der Fraktal-Boxen vom Profit abgezogen, um die echte Gewinnspanne aufzuzeigen.
     """)
 
 
